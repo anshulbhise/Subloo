@@ -1,12 +1,16 @@
 import calendar
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from flask import Blueprint, jsonify, request
 
 from app.common.auth import get_current_user_id, login_required
 from app.database.extensions import db
+
+
+def utc_now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 from app.preprocessing.service import (
     calculate_monthly_cost,
     normalize_amount,
@@ -464,12 +468,25 @@ def update_subscription(sub_id):
     if "usage_score" in data and data["usage_score"] is not None:
         try:
             usage_score = normalize_usage_score(data["usage_score"])
+            last_checkin = (
+                SubscriptionUsageCheckIn.query.filter_by(
+                    subscription_id=subscription.id,
+                    user_id=user_id
+                )
+                .order_by(SubscriptionUsageCheckIn.recorded_at.desc())
+                .first()
+            )
+            new_recorded_at = utc_now()
+            if last_checkin and last_checkin.recorded_at and new_recorded_at <= last_checkin.recorded_at:
+                new_recorded_at = last_checkin.recorded_at + timedelta(seconds=1)
+
             check_in = SubscriptionUsageCheckIn(
                 subscription_id=subscription.id,
                 user_id=user_id,
                 usage_score=usage_score,
                 source="user_checkin",
                 notes=normalize_text(data.get("usage_notes")),
+                recorded_at=new_recorded_at,
             )
             db.session.add(check_in)
         except ValueError:
@@ -548,6 +565,19 @@ def check_in_usage(sub_id):
     if feedback_action and feedback_action not in {"keep", "cancel", "downgrade", "not_useful"}:
         feedback_action = None
 
+    # Ensure recorded_at advances beyond previous checkin
+    last_checkin = (
+        SubscriptionUsageCheckIn.query.filter_by(
+            subscription_id=subscription.id,
+            user_id=user_id
+        )
+        .order_by(SubscriptionUsageCheckIn.recorded_at.desc())
+        .first()
+    )
+    new_recorded_at = utc_now()
+    if last_checkin and last_checkin.recorded_at and new_recorded_at <= last_checkin.recorded_at:
+        new_recorded_at = last_checkin.recorded_at + timedelta(seconds=1)
+
     check_in = SubscriptionUsageCheckIn(
         subscription_id=subscription.id,
         user_id=user_id,
@@ -555,6 +585,7 @@ def check_in_usage(sub_id):
         source="user_checkin",
         feedback_action=feedback_action,
         notes=normalize_text(data.get("notes")),
+        recorded_at=new_recorded_at,
     )
 
     db.session.add(check_in)

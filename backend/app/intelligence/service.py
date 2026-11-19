@@ -71,14 +71,15 @@ def assess_subscription(subscription, user_id):
     )
 
     # Get latest usage checkin
-    latest_checkin = (
+    checkins = (
         SubscriptionUsageCheckIn.query.filter_by(
             subscription_id=subscription.id,
             user_id=user_id
         )
-        .order_by(SubscriptionUsageCheckIn.recorded_at.desc())
-        .first()
+        .order_by(SubscriptionUsageCheckIn.recorded_at.asc())
+        .all()
     )
+    latest_checkin = checkins[-1] if checkins else None
 
     usage_score = latest_checkin.usage_score if latest_checkin else 50
     user_feedback = latest_checkin.feedback_action if latest_checkin else None

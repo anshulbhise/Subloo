@@ -71,14 +71,15 @@ def get_analytics_summary():
             category_totals[category_name] += cost
 
         # Check for latest usage score to determine at-risk subscriptions
-        latest_checkin = (
+        checkins = (
             SubscriptionUsageCheckIn.query.filter_by(
                 subscription_id=sub.id,
                 user_id=user_id
             )
-            .order_by(SubscriptionUsageCheckIn.recorded_at.desc())
-            .first()
+            .order_by(SubscriptionUsageCheckIn.recorded_at.asc())
+            .all()
         )
+        latest_checkin = checkins[-1] if checkins else None
         if latest_checkin and latest_checkin.usage_score < 40 and sub.status == "active":
             at_risk_count += 1
 
@@ -155,14 +156,15 @@ def get_renewals_calendar():
         days_until = (sub.next_billing_date - today).days
         monthly_cost = calculate_monthly_cost(sub.amount, sub.billing_interval)
 
-        latest_checkin = (
+        checkins = (
             SubscriptionUsageCheckIn.query.filter_by(
                 subscription_id=sub.id,
                 user_id=user_id
             )
-            .order_by(SubscriptionUsageCheckIn.recorded_at.desc())
-            .first()
+            .order_by(SubscriptionUsageCheckIn.recorded_at.asc())
+            .all()
         )
+        latest_checkin = checkins[-1] if checkins else None
 
         items.append({
             "id": sub.id,
