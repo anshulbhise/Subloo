@@ -1,4 +1,5 @@
 
+import uuid
 from flask import Blueprint, jsonify, request, session
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import (
@@ -74,19 +75,25 @@ def register():
                 "error": "An account with this email already exists."
             }), 409
 
+        user_id = str(uuid.uuid4())
         user = User(
+            id=user_id,
             full_name=full_name,
             email=email,
             password_hash=generate_password_hash(password)
         )
 
         user.profile = UserProfile(
+            id=str(uuid.uuid4()),
+            user_id=user_id,
             currency="INR",
             timezone="Asia/Kolkata"
         )
 
         db.session.add(user)
         db.session.commit()
+
+        user_data = user_response(user)
 
     except IntegrityError:
         db.session.rollback()
@@ -102,13 +109,13 @@ def register():
         }), 500
 
     session.clear()
-    session["user_id"] = user.id
+    session["user_id"] = user_id
     session.permanent = True
 
     return jsonify({
         "status": "success",
         "message": "Account created successfully.",
-        "user": user_response(user)
+        "user": user_data
     }), 201
 
 

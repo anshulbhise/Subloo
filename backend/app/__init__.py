@@ -69,6 +69,10 @@ def create_app():
         )
 
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+    }
 
     # Initialize database
     db.init_app(app)
@@ -134,10 +138,22 @@ def create_app():
     def database_health():
         try:
             db.session.execute(text("SELECT 1"))
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            tables = inspector.get_table_names()
+            created_tables = False
+            if "users" not in tables:
+                db.create_all()
+                tables = inspect(db.engine).get_table_names()
+                created_tables = True
+
             return jsonify({
                 "status": "success",
-                "database": "MySQL",
+                "database": "PostgreSQL" if "postgres" in str(db.engine.url) else "MySQL",
                 "connected": True,
+                "tables_count": len(tables),
+                "tables": tables,
+                "created_tables_now": created_tables,
                 "message": "Subloo database connection successful!"
             }), 200
 
@@ -150,5 +166,15 @@ def create_app():
                 "connected": False,
                 "message": f"Database connection failed: {str(e)}"
             }), 503
+
+    # Global JSON error handler - guarantees JSON response for all 500 errors
+    @app.errorhandler(500)
+    @app.errorhandler(Exception)
+    def handle_global_error(e):
+        app.logger.exception(f"Unhandled error: {e}")
+        return jsonify({
+            "error": str(e) or "Internal server error",
+            "message": str(e) or "Internal server error"
+        }), 500
 
     return app
