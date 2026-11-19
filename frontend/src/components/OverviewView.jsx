@@ -75,12 +75,15 @@ function OverviewView({
       {/* KPI Statistic Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Active Subscriptions */}
-        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-xs transition hover:border-[var(--border-strong)]">
+        <div 
+          onClick={() => onNavigate("Subscriptions")}
+          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-xs transition hover:border-[var(--accent-primary)]/50 cursor-pointer group"
+        >
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] group-hover:text-[var(--accent-primary)] transition">
               Active Services
             </p>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-subtle)] text-[var(--accent-primary)]">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-subtle)] text-[var(--accent-primary)] group-hover:scale-105 transition">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
               </svg>
@@ -89,18 +92,24 @@ function OverviewView({
           <p className="mt-3 text-2xl sm:text-3xl font-extrabold text-[var(--text-primary)]">
             {summary?.active_subscriptions || 0}
           </p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            {summary?.total_subscriptions || subscriptions.length || 0} total subscriptions tracked
-          </p>
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-xs text-[var(--text-muted)]">
+              {summary?.total_subscriptions || subscriptions.length || 0} total tracked
+            </p>
+            <span className="text-[11px] text-[var(--accent-text)] font-semibold group-hover:underline">View all →</span>
+          </div>
         </div>
 
         {/* Card 2: Monthly Recurring Burn */}
-        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-xs transition hover:border-[var(--border-strong)]">
+        <div 
+          onClick={() => onNavigate("Analytics")}
+          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-xs transition hover:border-[var(--accent-primary)]/50 cursor-pointer group"
+        >
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] group-hover:text-[var(--accent-primary)] transition">
               Monthly Recurring
             </p>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-subtle)] text-[var(--accent-primary)] font-bold text-xs">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-subtle)] text-[var(--accent-primary)] font-bold text-xs group-hover:scale-105 transition">
               {currencySymbol}
             </div>
           </div>
@@ -111,18 +120,24 @@ function OverviewView({
               maximumFractionDigits: 2,
             })}
           </p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Normalized monthly burn
-          </p>
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-xs text-[var(--text-muted)]">
+              Normalized monthly burn
+            </p>
+            <span className="text-[11px] text-[var(--accent-text)] font-semibold group-hover:underline">Analytics →</span>
+          </div>
         </div>
 
         {/* Card 3: Yearly Projected Commitment */}
-        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-xs transition hover:border-[var(--border-strong)]">
+        <div 
+          onClick={() => onNavigate("Analytics")}
+          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-xs transition hover:border-[var(--accent-primary)]/50 cursor-pointer group"
+        >
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] group-hover:text-[var(--accent-primary)] transition">
               Yearly Projected
             </p>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-subtle)] text-[var(--accent-primary)]">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-subtle)] text-[var(--accent-primary)] group-hover:scale-105 transition">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
               </svg>
@@ -135,18 +150,24 @@ function OverviewView({
               maximumFractionDigits: 2,
             })}
           </p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Projected annual outlay
-          </p>
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-xs text-[var(--text-muted)]">
+              Projected annual outlay
+            </p>
+            <span className="text-[11px] text-[var(--accent-text)] font-semibold group-hover:underline">Analytics →</span>
+          </div>
         </div>
 
         {/* Card 4: Upcoming Renewals (30 Days) */}
-        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-xs transition hover:border-[var(--border-strong)]">
+        <div 
+          onClick={() => onNavigate("Renewals")}
+          className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-xs transition hover:border-[var(--accent-primary)]/50 cursor-pointer group"
+        >
           <div className="flex items-center justify-between">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)] group-hover:text-[var(--accent-primary)] transition">
               Upcoming Renewals
             </p>
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-subtle)] text-[var(--accent-primary)]">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-subtle)] text-[var(--accent-primary)] group-hover:scale-105 transition">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
@@ -155,9 +176,12 @@ function OverviewView({
           <p className="mt-3 text-2xl sm:text-3xl font-extrabold text-[var(--text-primary)]">
             {summary?.upcoming_renewals_count || 0}
           </p>
-          <p className="mt-1 text-xs text-[var(--text-muted)]">
-            Due within next 30 days
-          </p>
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-xs text-[var(--text-muted)]">
+              Due within next 30 days
+            </p>
+            <span className="text-[11px] text-[var(--accent-text)] font-semibold group-hover:underline">Timeline →</span>
+          </div>
         </div>
       </div>
 
@@ -235,29 +259,41 @@ function OverviewView({
             </button>
 
             <div className="mt-10 grid w-full gap-3 text-left sm:grid-cols-2">
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] p-4">
-                <div className="h-8 w-8 rounded-lg bg-[var(--accent-subtle)] text-[var(--accent-primary)] flex items-center justify-center mb-2">
+              <div 
+                onClick={() => onNavigate("Subscriptions")}
+                className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] p-4 cursor-pointer hover:border-[var(--accent-primary)]/50 transition group"
+              >
+                <div className="h-8 w-8 rounded-lg bg-[var(--accent-subtle)] text-[var(--accent-primary)] flex items-center justify-center mb-2 group-hover:scale-105 transition">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                   </svg>
                 </div>
-                <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                  Centralized Tracking
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                    Centralized Tracking
+                  </h3>
+                  <span className="text-[10px] text-[var(--accent-text)] font-semibold group-hover:underline">Subscriptions →</span>
+                </div>
                 <p className="mt-1 text-xs text-[var(--text-muted)] leading-relaxed">
                   Manage Netflix, AWS, Spotify, and SaaS subscriptions in one unified dashboard.
                 </p>
               </div>
 
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] p-4">
-                <div className="h-8 w-8 rounded-lg bg-[var(--accent-subtle)] text-[var(--accent-primary)] flex items-center justify-center mb-2">
+              <div 
+                onClick={() => onNavigate("AI Insights")}
+                className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] p-4 cursor-pointer hover:border-[var(--accent-primary)]/50 transition group"
+              >
+                <div className="h-8 w-8 rounded-lg bg-[var(--accent-subtle)] text-[var(--accent-primary)] flex items-center justify-center mb-2 group-hover:scale-105 transition">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                   </svg>
                 </div>
-                <h3 className="text-sm font-bold text-[var(--text-primary)]">
-                  Waste Detection
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                    Waste Detection & AI Insights
+                  </h3>
+                  <span className="text-[10px] text-[var(--accent-text)] font-semibold group-hover:underline">Explore →</span>
+                </div>
                 <p className="mt-1 text-xs text-[var(--text-muted)] leading-relaxed">
                   Identify unused and underutilized services with automated cost-cutting alerts.
                 </p>
@@ -266,8 +302,41 @@ function OverviewView({
           </div>
         </section>
       ) : (
-        /* Populated Overview: Two-column split */
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        /* Populated Overview */
+        <div className="space-y-6">
+          {/* Waste Intelligence Shortcut Banner */}
+          <div
+            onClick={() => onNavigate("AI Insights")}
+            className="rounded-2xl border border-[var(--accent-border)] bg-[var(--accent-subtle)]/40 hover:bg-[var(--accent-subtle)]/70 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer transition shadow-xs group"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-primary)] text-white shadow-2xs group-hover:scale-105 transition">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-[var(--text-primary)]">
+                    AI Waste Intelligence & Optimization
+                  </h4>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--accent-primary)] text-white uppercase tracking-wider">
+                    Smart AI
+                  </span>
+                </div>
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  Scan for underutilized commitments, duplicate tools, and monthly cost-reduction opportunities.
+                </p>
+              </div>
+            </div>
+            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--accent-text)] group-hover:underline shrink-0 self-end sm:self-auto">
+              <span>View Insights</span>
+              <span>→</span>
+            </div>
+          </div>
+
+          {/* Two-column split: Subscriptions & Upcoming Renewals */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Recent Subscriptions (2 cols) */}
           <div className="lg:col-span-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs">
             <div className="flex items-center justify-between mb-4">
@@ -390,6 +459,7 @@ function OverviewView({
             )}
           </div>
         </div>
+      </div>
       )}
     </div>
   );

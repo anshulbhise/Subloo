@@ -71,13 +71,65 @@ function App() {
   const { user, loading: authLoading, logout, checkAuth } = useAuth();
   const { theme, setTheme, resolvedTheme } = useTheme();
 
+  // Helper to match URL page parameter to navigation item
+  const matchPageFromParam = (param) => {
+    if (!param) return null;
+    const clean = param.trim().toLowerCase();
+    const found = navigationItems.find(
+      (item) =>
+        item.name.toLowerCase() === clean ||
+        item.name.toLowerCase().replace(/\s+/g, "-") === clean
+    );
+    return found ? found.name : null;
+  };
+
   const [activePage, setActivePage] = useState(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       if (params.get("tab") === "gmail") return "Settings";
+      const matched = matchPageFromParam(params.get("page"));
+      if (matched) return matched;
     } catch (e) { }
     return "Overview";
   });
+
+  const handleNavigate = useCallback((page) => {
+    setActivePage(page);
+    try {
+      const url = new URL(window.location.href);
+      const slug = page.toLowerCase().replace(/\s+/g, "-");
+      if (page === "Overview") {
+        url.searchParams.delete("page");
+      } else {
+        url.searchParams.set("page", slug);
+      }
+      if (url.searchParams.get("tab") === "gmail" && page !== "Settings") {
+        url.searchParams.delete("tab");
+        url.searchParams.delete("status");
+        url.searchParams.delete("message");
+      }
+      window.history.pushState({ page }, "", url.toString());
+    } catch (e) { }
+  }, []);
+
+  // Listen to browser Back/Forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("tab") === "gmail") {
+          setActivePage("Settings");
+          return;
+        }
+        const matched = matchPageFromParam(params.get("page"));
+        setActivePage(matched || "Overview");
+      } catch (e) { }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   const [subscriptions, setSubscriptions] = useState([]);
   const [summary, setSummary] = useState(null);
   const [dataLoading, setDataLoading] = useState(false);
@@ -219,7 +271,7 @@ function App() {
               return (
                 <button
                   key={item.name}
-                  onClick={() => setActivePage(item.name)}
+                  onClick={() => handleNavigate(item.name)}
                   className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition ${isActive
                       ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] border border-[var(--accent-border)] shadow-xs"
                       : "text-[var(--text-secondary)] hover:bg-[var(--bg-surface-secondary)] hover:text-[var(--text-primary)]"
@@ -292,10 +344,13 @@ function App() {
       {/* MOBILE TOP BAR */}
       <div className="md:hidden sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-primary)] text-sm font-bold text-white">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-primary)] text-sm font-bold text-white shadow-2xs">
             S
           </div>
-          <span className="text-base font-bold text-[var(--text-primary)]">subloo</span>
+          <div>
+            <span className="text-sm font-bold text-[var(--text-primary)] leading-none block">subloo</span>
+            <span className="text-[10px] font-semibold text-[var(--accent-primary)] leading-none block mt-1">{activePage}</span>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -396,7 +451,7 @@ function App() {
               subscriptions={subscriptions}
               loading={dataLoading}
               onAddClick={handleOpenAdd}
-              onNavigate={(page) => setActivePage(page)}
+              onNavigate={handleNavigate}
               user={user}
             />
           )}
@@ -452,20 +507,20 @@ function App() {
       </main>
 
       {/* MOBILE BOTTOM NAVIGATION BAR */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[var(--bg-surface)] border-t border-[var(--border-subtle)] z-30 flex items-center justify-around py-2 px-1">
+      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-[var(--bg-surface)] border-t border-[var(--border-subtle)] z-30 flex items-center justify-between overflow-x-auto no-scrollbar py-2 px-1 shadow-lg">
         {navigationItems.map((item) => {
           const isActive = activePage === item.name;
           return (
             <button
               key={item.name}
-              onClick={() => setActivePage(item.name)}
-              className={`flex flex-col items-center justify-center p-1.5 rounded-lg transition min-w-[54px] ${isActive
-                  ? "text-[var(--accent-primary)] font-bold"
+              onClick={() => handleNavigate(item.name)}
+              className={`flex flex-col items-center justify-center py-1 px-2 rounded-lg transition min-w-[52px] shrink-0 ${isActive
+                  ? "text-[var(--accent-primary)] font-bold bg-[var(--accent-subtle)]"
                   : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                 }`}
             >
               <span className="text-sm">{item.icon}</span>
-              <span className="text-[10px] mt-0.5">{item.name}</span>
+              <span className="text-[10px] mt-0.5 whitespace-nowrap">{item.name}</span>
             </button>
           );
         })}
