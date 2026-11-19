@@ -1,6 +1,6 @@
 import { useState } from "react";
 import useAuth from "../context/useAuth";
-import { useTheme } from "../context/ThemeContext";
+import useTheme from "../context/useTheme";
 
 function Login() {
   const { login, register } = useAuth();

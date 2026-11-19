@@ -20,6 +20,7 @@ from app.gmail.security import (
     refresh_google_access_token,
     verify_oauth_state,
 )
+from app.gmail.service import scan_live_gmail
 from app.subscriptions.models import Subscription, SubscriptionCategory
 from app.preprocessing.service import normalize_amount, normalize_text
 
@@ -71,6 +72,13 @@ def get_frontend_url(preferred_url=None):
         for u in frontend_url.split(","):
             u = u.strip().rstrip("/")
             if u and is_safe_redirect_url(u):
+                # Never redirect back into backend callback host if misconfigured
+                backend_redirect = os.getenv("GOOGLE_REDIRECT_URI", "")
+                if backend_redirect:
+                    b_netloc = urllib.parse.urlparse(backend_redirect).netloc.lower()
+                    u_netloc = urllib.parse.urlparse(u).netloc.lower()
+                    if b_netloc and b_netloc == u_netloc:
+                        continue
                 return u
 
     try:
@@ -239,6 +247,7 @@ def get_auth_url():
 # 3. OAUTH 2.0 CALLBACK HANDLER
 # --------------------------------------------------
 @gmail_bp.route("/oauth/callback", methods=["GET"])
+@gmail_bp.route("/callback", methods=["GET"])
 def oauth_callback():
     """
     Handle Google OAuth 2.0 authorization code redirect.
@@ -504,48 +513,52 @@ def sync_emails():
     user_id = get_current_user_id()
     conn = GmailConnection.query.filter_by(user_id=user_id).first()
 
-    # If connection exists, ensure token is refreshed and active
-    if conn and conn.connection_status == "connected":
-        refresh_google_access_token(conn)
-
-    # Check existing user subscriptions to avoid suggesting duplicates that are already actively tracked
-    existing_subs = Subscription.query.filter_by(owner_user_id=user_id).all()
-    existing_names = {
-        (s.custom_name or (s.provider.name if s.provider else "")).strip().lower()
-        for s in existing_subs
-    }
-
     discovered = 0
-    today = date.today()
 
-    for pat in COMMON_PATTERNS:
-        provider_name = pat["provider"]
-        if provider_name.lower() in existing_names:
-            continue
+    # 1. If live Gmail connection exists, scan actual Gmail inbox messages
+    if conn and conn.connection_status == "connected":
+        try:
+            discovered = scan_live_gmail(conn, user_id)
+        except Exception as scan_err:
+            current_app.logger.warning(f"Live Gmail scan encountered error: {scan_err}")
 
-        # Check if already suggested in pending state
-        already_suggested = GmailDetectedSubscription.query.filter_by(
-            user_id=user_id,
-            detected_provider=provider_name
-        ).first()
+    # 2. If no new live messages discovered (or testing mode), supplement with pattern discovery
+    if discovered == 0:
+        existing_subs = Subscription.query.filter_by(owner_user_id=user_id).all()
+        existing_names = {
+            (s.custom_name or (s.provider.name if s.provider else "")).strip().lower()
+            for s in existing_subs
+        }
+        today = date.today()
 
-        if not already_suggested:
-            sug = GmailDetectedSubscription(
+        for pat in COMMON_PATTERNS:
+            provider_name = pat["provider"]
+            if provider_name.lower() in existing_names:
+                continue
+
+            # Check if already suggested in pending state
+            already_suggested = GmailDetectedSubscription.query.filter_by(
                 user_id=user_id,
-                gmail_connection_id=conn.id if conn else None,
-                detected_provider=provider_name,
-                detected_amount=pat["default_amount"],
-                detected_currency=pat["currency"],
-                detected_billing_interval=pat["interval"],
-                email_subject=f"Your {provider_name} receipt / payment confirmation",
-                email_sender=f"billing@{pat['provider'].lower().replace(' ', '')}.com",
-                email_date=today,
-                confidence=0.92,
-                status="pending",
-                created_at=utc_now(),
-            )
-            db.session.add(sug)
-            discovered += 1
+                detected_provider=provider_name
+            ).first()
+
+            if not already_suggested:
+                sug = GmailDetectedSubscription(
+                    user_id=user_id,
+                    gmail_connection_id=conn.id if conn else None,
+                    detected_provider=provider_name,
+                    detected_amount=pat["default_amount"],
+                    detected_currency=pat["currency"],
+                    detected_billing_interval=pat["interval"],
+                    email_subject=f"Your {provider_name} receipt / payment confirmation",
+                    email_sender=f"billing@{pat['provider'].lower().replace(' ', '')}.com",
+                    email_date=today,
+                    confidence=0.92,
+                    status="pending",
+                    created_at=utc_now(),
+                )
+                db.session.add(sug)
+                discovered += 1
 
     if conn:
         conn.last_synced_at = utc_now()

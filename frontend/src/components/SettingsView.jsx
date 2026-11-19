@@ -1,11 +1,18 @@
 import { useState, useEffect } from "react";
-import { useTheme } from "../context/ThemeContext";
+import useTheme from "../context/useTheme";
 import api from "../services/api";
 
 function SettingsView({ user, onProfileUpdated }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
 
-  const [activeTab, setActiveTab] = useState("general"); // "general" | "gmail" | "organizations"
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "gmail") return "gmail";
+      if (params.get("tab") === "organizations") return "organizations";
+    }
+    return "general";
+  });
 
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [currency, setCurrency] = useState(user?.profile?.currency || "INR");
@@ -24,7 +31,19 @@ function SettingsView({ user, onProfileUpdated }) {
   const [gmailStatus, setGmailStatus] = useState(null);
   const [gmailSuggestions, setGmailSuggestions] = useState([]);
   const [gmailLoading, setGmailLoading] = useState(false);
-  const [gmailMessage, setGmailMessage] = useState("");
+  const [gmailMessage, setGmailMessage] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "gmail") {
+        const status = params.get("status");
+        const email = params.get("email");
+        const msg = params.get("message");
+        if (status === "connected") return `Google account connected successfully! (${email || "Gmail"})`;
+        if (status === "error") return msg || "Failed to connect Google account.";
+      }
+    }
+    return "";
+  });
 
   // Organization states
   const [organizations, setOrganizations] = useState([]);
@@ -101,33 +120,42 @@ function SettingsView({ user, onProfileUpdated }) {
     }
   };
 
-  // Handle OAuth redirect return params
+  // Clean OAuth redirect query params from address bar after parsing
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const tabParam = params.get("tab");
-    const statusParam = params.get("status");
-    const emailParam = params.get("email");
-    const messageParam = params.get("message");
-
-    if (tabParam === "gmail") {
-      setActiveTab("gmail");
-      if (statusParam === "connected") {
-        setGmailMessage(`Google account connected successfully! (${emailParam || "Gmail"})`);
-        loadGmail();
-      } else if (statusParam === "error") {
-        setGmailMessage(messageParam || "Failed to connect Google account.");
+      if (params.get("tab") === "gmail") {
+        window.history.replaceState({}, document.title, window.location.pathname);
       }
-      // Clean query params from address bar without reloading
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
-  }, []);
+    }, []);
 
   useEffect(() => {
+    let ignore = false;
     if (activeTab === "gmail") {
-      loadGmail();
+      api.getGmailStatus()
+        .then((sRes) => {
+          if (!ignore) setGmailStatus(sRes);
+          return api.getGmailSuggestions();
+        })
+        .then((sugRes) => {
+          if (!ignore) setGmailSuggestions(sugRes?.suggestions || []);
+        })
+        .catch((err) => console.error("Gmail load error:", err));
     } else if (activeTab === "organizations") {
-      loadOrgs();
+      api.getOrganizations()
+        .then((res) => {
+          if (!ignore) {
+            setOrganizations(res?.organizations || []);
+            setPendingInvites(res?.pending_invitations || []);
+            if (res?.organizations?.length > 0) {
+              setInviteOrgId((prev) => prev || res.organizations[0].id);
+            }
+          }
+        })
+        .catch((err) => console.error("Org load error:", err));
     }
+    return () => {
+      ignore = true;
+    };
   }, [activeTab]);
 
   const handleSave = async (e) => {

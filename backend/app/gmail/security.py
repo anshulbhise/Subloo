@@ -20,24 +20,63 @@ def utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def get_encryption():
+def get_candidate_fernet_instances():
     """
-    Load the private encryption key from environment variables or derive a fallback key from SECRET_KEY.
-    Ensures safe handling of whitespace, quotes, and invalid strings.
+    Return all viable Fernet encryption instances in priority order:
+    1. Private TOKEN_ENCRYPTION_KEY if valid.
+    2. SECRET_KEY derived key (AES-128 via SHA-256).
+    3. Production/development fallback keys.
+    This guarantees decryption never fails due to key derivation discrepancies.
     """
     import base64
     import hashlib
 
-    key = os.getenv("TOKEN_ENCRYPTION_KEY")
-    if key:
-        key = key.strip().strip("'\"")
+    candidates = []
+    seen = set()
+
+    # 1. Configured TOKEN_ENCRYPTION_KEY
+    env_key = os.getenv("TOKEN_ENCRYPTION_KEY")
+    if env_key:
+        clean_key = env_key.strip().strip("'\"")
         try:
-            return Fernet(key.encode("utf-8"))
-        except (ValueError, TypeError):
+            candidates.append(Fernet(clean_key.encode("utf-8")))
+            seen.add(clean_key)
+        except Exception:
             pass
 
-    secret = os.getenv("SECRET_KEY", "subloo-dev-secret-key-encryption-fallback")
-    fallback_key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest()).decode()
+    # 2. Configured SECRET_KEY
+    secret = os.getenv("SECRET_KEY")
+    if secret:
+        clean_secret = secret.strip().strip("'\"")
+        derived_key = base64.urlsafe_b64encode(hashlib.sha256(clean_secret.encode()).digest()).decode()
+        if derived_key not in seen:
+            try:
+                candidates.append(Fernet(derived_key.encode("utf-8")))
+                seen.add(derived_key)
+            except Exception:
+                pass
+
+    # 3. Known fallback secrets
+    for fallback in ["subloo-dev-secret-key", "subloo-dev-secret-key-encryption-fallback"]:
+        k = base64.urlsafe_b64encode(hashlib.sha256(fallback.encode()).digest()).decode()
+        if k not in seen:
+            try:
+                candidates.append(Fernet(k.encode("utf-8")))
+                seen.add(k)
+            except Exception:
+                pass
+
+    return candidates
+
+
+def get_encryption():
+    """Primary encryption instance for new encryptions."""
+    candidates = get_candidate_fernet_instances()
+    if candidates:
+        return candidates[0]
+    import base64
+    import hashlib
+    fallback_key = base64.urlsafe_b64encode(hashlib.sha256(b"subloo-dev-secret-key").digest()).decode()
     return Fernet(fallback_key.encode("utf-8"))
 
 
@@ -52,16 +91,29 @@ def encrypt_credentials(credentials):
 
 
 def decrypt_credentials(encrypted_credentials):
-    """Decrypt OAuth credentials inside the backend only."""
+    """
+    Decrypt OAuth credentials inside the backend only.
+    Tries all candidate Fernet keys to ensure backward and configuration compatibility.
+    """
     if not encrypted_credentials:
         raise ValueError("Encrypted credentials are missing.")
 
-    encryption = get_encryption()
-    try:
-        decrypted = encryption.decrypt(encrypted_credentials.encode("utf-8"))
-        return decrypted.decode("utf-8")
-    except InvalidToken:
-        raise ValueError("Unable to decrypt credentials. Check the encryption key.")
+    token = encrypted_credentials.strip()
+    token_bytes = token.encode("utf-8") if isinstance(token, str) else token
+
+    last_error = None
+    for fernet in get_candidate_fernet_instances():
+        try:
+            decrypted = fernet.decrypt(token_bytes)
+            return decrypted.decode("utf-8")
+        except InvalidToken as it:
+            last_error = it
+            continue
+        except Exception as e:
+            last_error = e
+            continue
+
+    raise ValueError(f"Unable to decrypt credentials with configured encryption keys: {last_error}")
 
 
 def generate_oauth_state(user_id, frontend_url=None):
@@ -88,10 +140,17 @@ def verify_oauth_state(state_token, max_age_seconds=600):
     if not state_token or not isinstance(state_token, str):
         return None, None
 
+    clean_state = state_token.strip()
+    if "%" in clean_state:
+        import urllib.parse
+        clean_state = urllib.parse.unquote(clean_state)
+
     try:
-        decrypted = decrypt_credentials(state_token)
+        decrypted = decrypt_credentials(clean_state)
         payload = json.loads(decrypted)
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger("subloo.gmail.security").warning(f"Failed to decrypt OAuth state: {e}")
         return None, None
 
     user_id = payload.get("uid")

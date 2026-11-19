@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import Login from "./pages/Login";
 import useAuth from "./context/useAuth";
-import { useTheme } from "./context/ThemeContext";
+import useTheme from "./context/useTheme";
 import api from "./services/api";
 
 import OverviewView from "./components/OverviewView";
@@ -90,129 +90,129 @@ function App() {
       if (params.get("tab") === "gmail") return "Settings";
       const matched = matchPageFromParam(params.get("page"));
       if (matched) return matched;
-  } catch {
-    // ignore search param parsing failure
-  }
-  return "Overview";
-});
-
-const handleNavigate = useCallback((page) => {
-  setActivePage(page);
-  try {
-    const url = new URL(window.location.href);
-    const slug = page.toLowerCase().replace(/\s+/g, "-");
-    if (page === "Overview") {
-      url.searchParams.delete("page");
-    } else {
-      url.searchParams.set("page", slug);
+    } catch {
+      // ignore search param parsing failure
     }
-    if (url.searchParams.get("tab") === "gmail" && page !== "Settings") {
-      url.searchParams.delete("tab");
-      url.searchParams.delete("status");
-      url.searchParams.delete("message");
-    }
-    window.history.pushState({ page }, "", url.toString());
-} catch {
-  // ignore history push failure
-}
-  }, []);
+    return "Overview";
+  });
 
-// Listen to browser Back/Forward navigation
-useEffect(() => {
-  const handlePopState = () => {
+  const handleNavigate = useCallback((page) => {
+    setActivePage(page);
     try {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("tab") === "gmail") {
-        setActivePage("Settings");
-        return;
+      const url = new URL(window.location.href);
+      const slug = page.toLowerCase().replace(/\s+/g, "-");
+      if (page === "Overview") {
+        url.searchParams.delete("page");
+      } else {
+        url.searchParams.set("page", slug);
       }
-      const matched = matchPageFromParam(params.get("page"));
-      setActivePage(matched || "Overview");
-  } catch {
-    // ignore history popstate parsing failure
-  }
-};
-
-window.addEventListener("popstate", handlePopState);
-return () => window.removeEventListener("popstate", handlePopState);
+      if (url.searchParams.get("tab") === "gmail" && page !== "Settings") {
+        url.searchParams.delete("tab");
+        url.searchParams.delete("status");
+        url.searchParams.delete("message");
+      }
+      window.history.pushState({ page }, "", url.toString());
+    } catch {
+      // ignore history push failure
+    }
   }, []);
 
-const [subscriptions, setSubscriptions] = useState([]);
-const [summary, setSummary] = useState(null);
-const [dataLoading, setDataLoading] = useState(false);
-
-// Modal states
-const [modalOpen, setModalOpen] = useState(false);
-const [editingSub, setEditingSub] = useState(null);
-const [deletingSub, setDeletingSub] = useState(null);
-const [deleteLoading, setDeleteLoading] = useState(false);
-const [checkInSub, setCheckInSub] = useState(null);
-
-// Refresh subscriptions & dashboard summary
-const refreshData = useCallback(async () => {
-  if (!user) return;
-  try {
-    setDataLoading(true);
-    const [subsRes, summaryRes] = await Promise.all([
-      api.getSubscriptions(),
-      api.getAnalyticsSummary().catch(() => ({})),
-    ]);
-    setSubscriptions(subsRes.subscriptions || []);
-    setSummary(summaryRes || null);
-  } catch (err) {
-    console.error("Failed to fetch dashboard data:", err);
-  } finally {
-    setDataLoading(false);
-  }
-}, [user]);
-
-useEffect(() => {
-  let ignore = false;
-  if (user) {
-    Promise.all([
-      api.getSubscriptions(),
-      api.getAnalyticsSummary().catch(() => ({})),
-    ])
-      .then(([subsRes, summaryRes]) => {
-        if (!ignore) {
-          setSubscriptions(subsRes?.subscriptions || []);
-          setSummary(summaryRes || null);
+  // Listen to browser Back/Forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("tab") === "gmail") {
+          setActivePage("Settings");
+          return;
         }
-      })
-      .catch((err) => {
-        console.error("Failed to fetch dashboard data:", err);
-      });
-  }
+        const matched = matchPageFromParam(params.get("page"));
+        setActivePage(matched || "Overview");
+      } catch {
+        // ignore history popstate parsing failure
+      }
+    };
 
-return () => {
-  ignore = true;
-};
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  const [subscriptions, setSubscriptions] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [dataLoading, setDataLoading] = useState(false);
+
+  // Modal states
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingSub, setEditingSub] = useState(null);
+  const [deletingSub, setDeletingSub] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [checkInSub, setCheckInSub] = useState(null);
+
+  // Refresh subscriptions & dashboard summary
+  const refreshData = useCallback(async () => {
+    if (!user) return;
+    try {
+      setDataLoading(true);
+      const [subsRes, summaryRes] = await Promise.all([
+        api.getSubscriptions(),
+        api.getAnalyticsSummary().catch(() => ({})),
+      ]);
+      setSubscriptions(subsRes.subscriptions || []);
+      setSummary(summaryRes || null);
+    } catch (err) {
+      console.error("Failed to fetch dashboard data:", err);
+    } finally {
+      setDataLoading(false);
+    }
   }, [user]);
 
-// Handlers
-const handleOpenAdd = () => {
-  setEditingSub(null);
-  setModalOpen(true);
-};
+  useEffect(() => {
+    let ignore = false;
+    if (user) {
+      Promise.all([
+        api.getSubscriptions(),
+        api.getAnalyticsSummary().catch(() => ({})),
+      ])
+        .then(([subsRes, summaryRes]) => {
+          if (!ignore) {
+            setSubscriptions(subsRes?.subscriptions || []);
+            setSummary(summaryRes || null);
+          }
+        })
+        .catch((err) => {
+          console.error("Failed to fetch dashboard data:", err);
+        });
+    }
 
-const handleOpenEdit = (sub) => {
-  setEditingSub(sub);
-  setModalOpen(true);
-};
+    return () => {
+      ignore = true;
+    };
+  }, [user]);
 
-const handleDeleteConfirm = async () => {
-  if (!deletingSub) return;
-  setDeleteLoading(true);
-  try {
-    await api.deleteSubscription(deletingSub.id);
-    setDeletingSub(null);
-    await refreshData();
-  } catch (err) {
-    alert(err.message || "Failed to delete subscription.");
-  } finally {
-    setDeleteLoading(false);
-  }
-};
+  // Handlers
+  const handleOpenAdd = () => {
+    setEditingSub(null);
+    setModalOpen(true);
+  };
+
+  const handleOpenEdit = (sub) => {
+    setEditingSub(sub);
+    setModalOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deletingSub) return;
+    setDeleteLoading(true);
+    try {
+      await api.deleteSubscription(deletingSub.id);
+      setDeletingSub(null);
+      await refreshData();
+    } catch (err) {
+      alert(err.message || "Failed to delete subscription.");
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const handleProfileUpdated = () => {
     if (checkAuth) checkAuth();

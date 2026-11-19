@@ -3,6 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.database.extensions import db
+from app.intelligence.gemini import generate_llm_insight
 from app.intelligence.models import SubscriptionAssessment
 from app.preprocessing.service import (
     calculate_monthly_cost,
@@ -181,6 +182,18 @@ def assess_subscription(subscription, user_id):
         )
 
     explanation = " ".join(explanation_parts)
+
+    # Optional Gemini LLM insight enhancement if configured
+    sub_name = subscription.custom_name or (subscription.provider.name if subscription.provider else "Subscription")
+    llm_insight = generate_llm_insight(
+        subscription_name=sub_name,
+        monthly_cost=float(monthly_cost),
+        currency=subscription.currency,
+        usage_score=usage_score,
+        billing_interval=subscription.billing_interval,
+    )
+    if llm_insight:
+        explanation = f"{llm_insight} {explanation}"
 
     # Upsert SubscriptionAssessment
     assessment = SubscriptionAssessment.query.filter_by(

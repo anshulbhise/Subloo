@@ -16,11 +16,13 @@ async function apiRequest(endpoint, options = {}) {
     console.error(`Network error connecting to ${API_BASE_URL}${endpoint}:`, networkError);
     if (API_BASE_URL.includes("localhost")) {
       throw new Error(
-        `Cannot reach backend at ${API_BASE_URL}. Make sure your backend is running or set VITE_API_BASE_URL in your hosting settings.`
+          `Cannot reach backend at ${API_BASE_URL}. Make sure your backend is running or set VITE_API_BASE_URL in your hosting settings.`,
+        { cause: networkError }
       );
     }
     throw new Error(
-      `Unable to reach backend at ${API_BASE_URL}. The server may be waking up or offline.`
+        `Unable to reach backend at ${API_BASE_URL}. The server may be waking up or offline.`,
+      { cause: networkError }
     );
   }
 

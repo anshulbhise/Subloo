@@ -5,27 +5,34 @@ export default function NotificationCenter() {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(false);
   const dropdownRef = useRef(null);
 
   const fetchNotifications = async () => {
     try {
-      setLoading(true);
       const res = await api.getNotifications();
       setNotifications(res.notifications || []);
       setUnreadCount(res.unread_count || 0);
     } catch (err) {
       console.error("Failed to load notifications:", err);
-    } finally {
-      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchNotifications();
-    // Refresh periodically every 60s
+    let ignore = false;
+    api.getNotifications()
+      .then((res) => {
+        if (!ignore) {
+          setNotifications(res.notifications || []);
+          setUnreadCount(res.unread_count || 0);
+        }
+      })
+      .catch((err) => console.error("Failed to load notifications:", err));
+
     const timer = setInterval(fetchNotifications, 60000);
-    return () => clearInterval(timer);
+    return () => {
+      ignore = true;
+      clearInterval(timer);
+    };
   }, []);
 
   // Close dropdown on outside click
@@ -184,9 +191,8 @@ export default function NotificationCenter() {
                 <div
                   key={notif.id}
                   onClick={() => !notif.is_read && handleMarkAsRead(notif.id)}
-                  className={`flex items-start gap-3 p-3.5 transition cursor-pointer hover:bg-[var(--bg-surface-hover)] ${
-                    notif.is_read ? "opacity-75" : "bg-[var(--accent-subtle)]/30"
-                  }`}
+                  className={`flex items-start gap-3 p-3.5 transition cursor-pointer hover:bg-[var(--bg-surface-hover)] ${notif.is_read ? "opacity-75" : "bg-[var(--accent-subtle)]/30"
+                    }`}
                 >
                   {getIcon(notif.type)}
                   <div className="min-w-0 flex-1">

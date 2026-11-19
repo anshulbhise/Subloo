@@ -131,6 +131,29 @@ def create_app():
     )
 
 
+    # Root route handler: graceful redirect to frontend or serve static SPA
+    @app.route("/", methods=["GET"])
+    def root_index():
+        from flask import redirect, send_from_directory, request
+        frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+        if (frontend_dist / "index.html").exists():
+            return send_from_directory(frontend_dist, "index.html")
+
+        # If incoming query parameters exist (such as OAuth redirect errors or statuses)
+        target_frontend = os.getenv("FRONTEND_URL") or "https://subloo-frontend.onrender.com"
+        target_frontend = target_frontend.split(",")[0].strip().rstrip("/")
+        query = request.query_string.decode("utf-8")
+        if query:
+            sep = "&" if "?" in target_frontend else "?"
+            return redirect(f"{target_frontend}/{sep}{query}")
+
+        return jsonify({
+            "status": "online",
+            "service": "Subloo Backend API",
+            "health": "/api/health",
+            "frontend": target_frontend
+        }), 200
+
     # Basic backend health check
     @app.route("/api/health", methods=["GET"])
     def health_check():

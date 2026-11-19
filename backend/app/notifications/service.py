@@ -1,10 +1,42 @@
+import os
+import requests
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from app.database.extensions import db
 from app.notifications.models import Notification
 from app.subscriptions.models import Subscription
-from app.users.models import UserProfile
+from app.users.models import User, UserProfile
 from app.preprocessing.service import calculate_monthly_cost
+
+
+def send_external_email(recipient_email, subject, html_content):
+    """
+    Deliver external email alert via Resend API if configured in environment.
+    Falls back gracefully if RESEND_API_KEY is not set.
+    """
+    resend_key = os.getenv("RESEND_API_KEY")
+    if not resend_key:
+        return False
+
+    sender = os.getenv("EMAIL_FROM", "Subloo Alerts <notifications@subloo.app>")
+    try:
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {resend_key.strip()}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": sender,
+                "to": [recipient_email],
+                "subject": subject,
+                "html": html_content,
+            },
+            timeout=8,
+        )
+        return resp.status_code in (200, 201)
+    except Exception:
+        return False
 
 
 def utc_now():

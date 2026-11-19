@@ -1,132 +1,127 @@
 import { useState, useEffect } from "react";
 import api from "../services/api";
 
-function SubscriptionModal({ isOpen, onClose, onSaved, subscription = null }) {
-  const isEditing = Boolean(subscription);
+  function calculateNextBilling(startStr, interval) {
+    const d = new Date(startStr);
+    if (isNaN(d.getTime())) return "";
+    if (interval === "weekly") d.setDate(d.getDate() + 7);
+    else if (interval === "monthly") d.setMonth(d.getMonth() + 1);
+    else if (interval === "quarterly") d.setMonth(d.getMonth() + 3);
+    else if (interval === "half_yearly") d.setMonth(d.getMonth() + 6);
+    else if (interval === "yearly") d.setFullYear(d.getFullYear() + 1);
+    else d.setMonth(d.getMonth() + 1);
+    return d.toISOString().split("T")[0];
+  }
 
-  const [categories, setCategories] = useState([]);
-  const [name, setName] = useState("");
-  const [categoryName, setCategoryName] = useState("");
-  const [customCategory, setCustomCategory] = useState("");
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState("INR");
-  const [billingInterval, setBillingInterval] = useState("monthly");
-  const [status, setStatus] = useState("active");
-  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
-  const [nextBillingDate, setNextBillingDate] = useState("");
-  const [usageScore, setUsageScore] = useState(70);
-  const [notes, setNotes] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  function SubscriptionModalDialog({ onClose, onSaved, subscription }) {
+    const isEditing = Boolean(subscription);
 
-  // Fetch standard categories
-  useEffect(() => {
-    async function fetchCategories() {
-      try {
-        const res = await api.getCategories();
-        setCategories(res.categories || []);
-      } catch {
-        // Fallback standard categories if offline
-        setCategories([
-          { name: "Streaming & Entertainment" },
-          { name: "Software & SaaS" },
-          { name: "AI & Machine Learning" },
-          { name: "Developer & Cloud" },
-          { name: "Finance & Business" },
-          { name: "Health & Fitness" },
-          { name: "Utilities & Other" },
-        ]);
-      }
-    }
-    fetchCategories();
-  }, []);
+    const [categories, setCategories] = useState([
+      { name: "Streaming & Entertainment" },
+      { name: "Software & SaaS" },
+      { name: "AI & Machine Learning" },
+      { name: "Developer & Cloud" },
+      { name: "Finance & Business" },
+      { name: "Health & Fitness" },
+      { name: "Utilities & Other" },
+    ]);
 
-  // Populate form when editing or opening
-  useEffect(() => {
-    if (subscription) {
-      setName(subscription.name || subscription.custom_name || "");
-      setCategoryName(subscription.category_name || "Software & SaaS");
-      setAmount(subscription.amount || "");
-      setCurrency(subscription.currency || "INR");
-      setBillingInterval(subscription.billing_interval || "monthly");
-      setStatus(subscription.status || "active");
-      setStartDate(subscription.start_date || new Date().toISOString().split("T")[0]);
-      setNextBillingDate(subscription.next_billing_date || "");
-      setUsageScore(subscription.usage_score !== null && subscription.usage_score !== undefined ? subscription.usage_score : 70);
-      setNotes(subscription.notes || "");
-    } else {
-      setName("");
-      setCategoryName("Streaming & Entertainment");
-      setCustomCategory("");
-      setAmount("");
-      setCurrency("INR");
-      setBillingInterval("monthly");
-      setStatus("active");
-      const today = new Date().toISOString().split("T")[0];
-      setStartDate(today);
-      // Auto default next billing to 1 month out
-      const nextMonth = new Date();
-      nextMonth.setMonth(nextMonth.getMonth() + 1);
-      setNextBillingDate(nextMonth.toISOString().split("T")[0]);
-      setUsageScore(70);
-      setNotes("");
-    }
-    setError("");
-  }, [subscription, isOpen]);
+    const [name, setName] = useState(subscription?.name || subscription?.custom_name || "");
+    const [categoryName, setCategoryName] = useState(
+      subscription?.category_name || "Streaming & Entertainment"
+    );
+    const [customCategory, setCustomCategory] = useState("");
+    const [amount, setAmount] = useState(
+      subscription?.amount !== null && subscription?.amount !== undefined
+        ? String(subscription.amount)
+        : ""
+    );
+    const [currency, setCurrency] = useState(subscription?.currency || "INR");
+    const [billingInterval, setBillingInterval] = useState(
+      subscription?.billing_interval || "monthly"
+    );
+    const [status, setStatus] = useState(subscription?.status || "active");
+    const [startDate, setStartDate] = useState(
+      subscription?.start_date || new Date().toISOString().split("T")[0]
+    );
+    const [nextBillingDate, setNextBillingDate] = useState(() => {
+      if (subscription?.next_billing_date) return subscription.next_billing_date;
+      const todayStr = new Date().toISOString().split("T")[0];
+      return calculateNextBilling(todayStr, subscription?.billing_interval || "monthly");
+    });
+    const [usageScore, setUsageScore] = useState(
+      subscription?.usage_score !== null && subscription?.usage_score !== undefined
+        ? subscription.usage_score
+        : 70
+    );
+    const [notes, setNotes] = useState(subscription?.notes || "");
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState("");
 
-  // Automatically update next billing date when interval or start date changes (if adding)
-  useEffect(() => {
-    if (!isEditing && startDate) {
-      const d = new Date(startDate);
-      if (!isNaN(d.getTime())) {
-        if (billingInterval === "weekly") d.setDate(d.getDate() + 7);
-        else if (billingInterval === "monthly") d.setMonth(d.getMonth() + 1);
-        else if (billingInterval === "quarterly") d.setMonth(d.getMonth() + 3);
-        else if (billingInterval === "half_yearly") d.setMonth(d.getMonth() + 6);
-        else if (billingInterval === "yearly") d.setFullYear(d.getFullYear() + 1);
-        else d.setMonth(d.getMonth() + 1);
-        setNextBillingDate(d.toISOString().split("T")[0]);
-      }
-    }
-  }, [billingInterval, startDate, isEditing]);
-
-  if (!isOpen) return null;
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
-
-    try {
-      const finalCategory = categoryName === "Custom..." ? customCategory.trim() : categoryName;
-
-      const payload = {
-        name: name.trim(),
-        amount: parseFloat(amount),
-        currency,
-        billing_interval: billingInterval,
-        category_name: finalCategory || "Utilities & Other",
-        status,
-        start_date: startDate,
-        next_billing_date: nextBillingDate || null,
-        usage_score: Number(usageScore),
-        notes: notes.trim(),
+    useEffect(() => {
+      let ignore = false;
+      api.getCategories()
+        .then((res) => {
+          if (!ignore && res.categories?.length > 0) {
+            setCategories(res.categories);
+          }
+        })
+        .catch(() => { });
+      return () => {
+        ignore = true;
       };
+    }, []);
 
-      if (!payload.name) {
-        throw new Error("Please enter a subscription name.");
+        const handleStartDateChange = (val) => {
+          setStartDate(val);
+          if (!isEditing && val) {
+            setNextBillingDate(calculateNextBilling(val, billingInterval));
+          }
+  };
+
+    const handleIntervalChange = (val) => {
+      setBillingInterval(val);
+      if (!isEditing && startDate) {
+        setNextBillingDate(calculateNextBilling(startDate, val));
       }
-      if (isNaN(payload.amount) || payload.amount < 0) {
-        throw new Error("Please enter a valid positive amount.");
+};
+
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError("");
+  setLoading(true);
+
+  try {
+    const finalCategory = categoryName === "Custom..." ? customCategory.trim() : categoryName;
+
+    const payload = {
+      name: name.trim(),
+      amount: parseFloat(amount),
+      currency,
+      billing_interval: billingInterval,
+      category_name: finalCategory || "Utilities & Other",
+      status,
+      start_date: startDate,
+      next_billing_date: nextBillingDate || null,
+      usage_score: parseInt(usageScore, 10),
+      notes: notes.trim() || null,
+    };
+
+    if (!payload.name) {
+      throw new Error("Subscription name is required.");
+    }
+      if (isNaN(payload.amount) || payload.amount <= 0) {
+        throw new Error("Please enter a valid amount greater than 0.");
       }
 
+      let res;
       if (isEditing) {
-        await api.updateSubscription(subscription.id, payload);
+        res = await api.updateSubscription(subscription.id, payload);
       } else {
-        await api.createSubscription(payload);
+        res = await api.createSubscription(payload);
       }
 
-      onSaved();
+      onSaved(res.subscription || payload);
       onClose();
     } catch (err) {
       setError(err.message || "Failed to save subscription.");
@@ -136,267 +131,263 @@ function SubscriptionModal({ isOpen, onClose, onSaved, subscription = null }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
-      <div className="relative w-full max-w-lg bg-[var(--bg-surface)] rounded-2xl shadow-2xl border border-[var(--border-subtle)] overflow-hidden my-8 max-h-[90vh] flex flex-col">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-6 py-4 bg-[var(--bg-surface-secondary)]">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--accent-subtle)] text-[var(--accent-primary)]">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-[var(--text-primary)]">
-                {isEditing ? "Edit Subscription" : "Add Subscription"}
-              </h2>
-              <p className="text-xs text-[var(--text-muted)]">
-                {isEditing
-                  ? "Update recurring commitment details"
-                  : "Track a new recurring software or service"}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] transition"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-xl rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+                <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-6 py-4">
+                  <div>
+                    <h2 className="text-base font-bold text-[var(--text-primary)]">
+                      {isEditing ? "Edit Subscription" : "Add Subscription"}
+                    </h2>
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
+                      {isEditing
+                        ? "Update pricing, billing cycles, or usage checks."
+                        : "Track a recurring service to monitor renewal dates & intelligence."}
+                    </p>
+                  </div>
+                  <button
+                    onClick={onClose}
+                    className="rounded-lg p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-surface-secondary)] hover:text-[var(--text-primary)] transition"
+                  >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                  </button>
+                </div>
 
-        {/* Modal Body */}
-        <div className="overflow-y-auto p-6 flex-1">
-          {error && (
-            <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3.5 text-xs font-medium text-red-500">
-              {error}
-            </div>
+                {/* Modal Body */}
+                  <div className="overflow-y-auto px-6 py-5 flex-1 space-y-4">
+                    {error && (
+                        <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-3.5 py-2.5 text-xs text-red-500 font-medium">
+                          {error}
+                        </div>
           )}
 
-          <form id="subscription-form" onSubmit={handleSubmit} className="space-y-4">
-            {/* Name */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                Subscription Name *
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Netflix, ChatGPT Plus, AWS..."
-                required
-                className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
-              />
-            </div>
+                        <form id="subscription-form" onSubmit={handleSubmit} className="space-y-4">
+                          {/* Service Name */}
+                          <div>
+                            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                              Service / Subscription Name *
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="e.g. Netflix, Spotify, GitHub, ChatGPT"
+                              value={name}
+                              onChange={(e) => setName(e.target.value)}
+                              className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
+                            />
+                          </div>
 
-            {/* Category */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                  Category
-                </label>
-                <select
-                  value={categoryName}
-                  onChange={(e) => setCategoryName(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition cursor-pointer"
-                >
-                  {categories.map((c) => (
-                    <option key={c.name} value={c.name}>
-                      {c.name}
-                    </option>
-                  ))}
-                  <option value="Custom...">Custom...</option>
-                </select>
-              </div>
+                            {/* Amount, Currency & Interval */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                                  Amount *
+                                </label>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  required
+                                  placeholder="0.00"
+                                  value={amount}
+                                  onChange={(e) => setAmount(e.target.value)}
+                                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
+                                />
+                              </div>
 
-              {/* Status */}
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                  Status
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition cursor-pointer"
-                >
-                  <option value="active">Active</option>
-                  <option value="trial">Free Trial</option>
-                  <option value="paused">Paused</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </div>
-            </div>
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                                  Currency
+                                </label>
+                                <select
+                                  value={currency}
+                                  onChange={(e) => setCurrency(e.target.value)}
+                                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
+                                >
+                                  <option value="INR">INR (₹)</option>
+                                  <option value="USD">USD ($)</option>
+                                  <option value="EUR">EUR (€)</option>
+                                  <option value="GBP">GBP (£)</option>
+                                </select>
+                              </div>
 
-            {categoryName === "Custom..." && (
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                  Custom Category Name
-                </label>
-                <input
-                  type="text"
-                  value={customCategory}
-                  onChange={(e) => setCustomCategory(e.target.value)}
-                  placeholder="e.g. AI Tools, Home Security"
-                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
-                />
-              </div>
-            )}
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                                  Billing Cycle
+                                </label>
+                                <select
+                                  value={billingInterval}
+                                  onChange={(e) => handleIntervalChange(e.target.value)}
+                                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
+                                >
+                                  <option value="monthly">Monthly</option>
+                                  <option value="yearly">Yearly</option>
+                                  <option value="quarterly">Quarterly</option>
+                                  <option value="half_yearly">Half-Yearly</option>
+                                  <option value="weekly">Weekly</option>
+                                </select>
+                              </div>
+                            </div>
 
-            {/* Amount, Currency, Interval */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-1">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                  Amount *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00"
-                  required
-                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
-                />
-              </div>
+                            {/* Category */}
+                            <div>
+                              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                                Category
+                              </label>
+                              <select
+                                value={categoryName}
+                                onChange={(e) => setCategoryName(e.target.value)}
+                                className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
+                              >
+                                {categories.map((c) => (
+                                  <option key={c.name} value={c.name}>
+                                    {c.name}
+                                  </option>
+                                ))}
+                                <option value="Custom...">+ Add custom category...</option>
+                              </select>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                  Currency
-                </label>
-                <select
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition cursor-pointer"
-                >
-                  <option value="INR">₹ INR</option>
-                  <option value="USD">$ USD</option>
-                  <option value="EUR">€ EUR</option>
-                  <option value="GBP">£ GBP</option>
-                </select>
-              </div>
+                              {categoryName === "Custom..." && (
+                                <input
+                                  type="text"
+                                  placeholder="Enter custom category name"
+                                  value={customCategory}
+                                  onChange={(e) => setCustomCategory(e.target.value)}
+                                  className="mt-2 w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] outline-none transition"
+                                />
+                              )}
+                            </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                  Interval
-                </label>
-                <select
-                  value={billingInterval}
-                  onChange={(e) => setBillingInterval(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition cursor-pointer"
-                >
-                  <option value="monthly">Monthly</option>
-                  <option value="yearly">Yearly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="half_yearly">Half-Yearly</option>
-                  <option value="weekly">Weekly</option>
-                </select>
-              </div>
-            </div>
+                            {/* Billing Dates */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                                  Start Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={startDate}
+                                  onChange={(e) => handleStartDateChange(e.target.value)}
+                                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] outline-none transition"
+                                />
+                              </div>
 
-            {/* Dates: Start Date & Next Billing Date */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                  Start Date
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
-                />
-              </div>
+                              <div>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                                  Next Renewal Date
+                                </label>
+                                <input
+                                  type="date"
+                                  value={nextBillingDate}
+                                  onChange={(e) => setNextBillingDate(e.target.value)}
+                                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] outline-none transition"
+                                />
+                              </div>
+                            </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                  Next Renewal Date
-                </label>
-                <input
-                  type="date"
-                  value={nextBillingDate}
-                  onChange={(e) => setNextBillingDate(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
-                />
-              </div>
-            </div>
+                                  {/* Status & Usage Score */}
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                      <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                                        Status
+                                      </label>
+                                      <select
+                                        value={status}
+                                        onChange={(e) => setStatus(e.target.value)}
+                                        className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--accent-primary)] outline-none transition"
+                                      >
+                                        <option value="active">Active (Renewing)</option>
+                                        <option value="paused">Paused</option>
+                                        <option value="cancelled">Cancelled</option>
+                                      </select>
+                                    </div>
 
-            {/* Usage Score Slider */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-                  Self-Reported Usage Level
-                </label>
-                <span className="text-xs font-bold text-[var(--accent-text)]">
-                  {usageScore}%
-                </span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                step="5"
-                value={usageScore}
-                onChange={(e) => setUsageScore(e.target.value)}
-                className="w-full accent-[var(--accent-primary)] cursor-pointer"
-              />
-              <div className="flex justify-between text-[10px] text-[var(--text-muted)] mt-1">
-                <span>0% (Rarely)</span>
-                <span>50% (Moderate)</span>
-                <span>100% (Daily)</span>
-              </div>
-            </div>
+                                      <div>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                          <label className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                                            Usage Confidence: {usageScore}%
+                                          </label>
+                                          <span
+                                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${usageScore >= 70
+                                                ? "bg-emerald-500/10 text-emerald-500"
+                                                : usageScore >= 40
+                                                  ? "bg-amber-500/10 text-amber-500"
+                                                  : "bg-red-500/10 text-red-500"
+                                              }`}
+                                          >
+                                            {usageScore >= 70 ? "High Value" : usageScore >= 40 ? "Moderate" : "Waste Risk"}
+                                          </span>
+                                        </div>
+                                        <input
+                                          type="range"
+                                          min="0"
+                                          max="100"
+                                          value={usageScore}
+                                          onChange={(e) => setUsageScore(e.target.value)}
+                                          className="w-full accent-[var(--accent-primary)] cursor-pointer mt-1"
+                                        />
+                                      </div>
+                                    </div>
 
-            {/* Notes */}
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
-                Notes & Reminders
-              </label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={2}
-                placeholder="Account tier, family plan notes, cancellation reminders..."
-                className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
-              />
-            </div>
-          </form>
-        </div>
+                                    {/* Notes */}
+                                    <div>
+                                      <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+                                        Notes & Reminders
+                                      </label>
+                                      <textarea
+                                        value={notes}
+                                        onChange={(e) => setNotes(e.target.value)}
+                                        rows={2}
+                                        placeholder="Account tier, family plan notes, cancellation reminders..."
+                                        className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
+                                      />
+                                    </div>
+                                  </form>
+                              </div>
 
-        {/* Modal Footer */}
-        <div className="flex items-center justify-end gap-3 border-t border-[var(--border-subtle)] px-6 py-4 bg-[var(--bg-surface-secondary)]">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={loading}
-            className="rounded-xl border border-[var(--border-subtle)] px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] transition"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="subscription-form"
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-5 py-2 text-xs font-semibold transition shadow-xs disabled:opacity-60"
-          >
-            {loading ? (
-              <>
-                <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                </svg>
-                <span>Saving...</span>
-              </>
-            ) : (
-              <span>{isEditing ? "Save Changes" : "Create Subscription"}</span>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+                              {/* Modal Footer */}
+                              <div className="flex items-center justify-end gap-3 border-t border-[var(--border-subtle)] px-6 py-4 bg-[var(--bg-surface-secondary)]">
+                                <button
+                                  type="button"
+                                  onClick={onClose}
+                                  disabled={loading}
+                                  className="rounded-xl border border-[var(--border-subtle)] px-4 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] transition cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="submit"
+                                  form="subscription-form"
+                                  disabled={loading}
+                                  className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-5 py-2 text-xs font-semibold transition shadow-xs disabled:opacity-60 cursor-pointer"
+                                >
+                                  {loading ? (
+                                    <>
+                                      <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                                      </svg>
+                                      <span>Saving...</span>
+                                    </>
+                                  ) : (
+                                    <span>{isEditing ? "Save Changes" : "Create Subscription"}</span>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                          );
 }
 
-export default SubscriptionModal;
+                          export default function SubscriptionModal({isOpen, onClose, onSaved, subscription = null}) {
+  if (!isOpen) return null;
+                          return (
+                          <SubscriptionModalDialog
+                            key={subscription ? `edit-${subscription.id}` : "new-sub"}
+                            onClose={onClose}
+                            onSaved={onSaved}
+                            subscription={subscription}
+                          />
+                          );
+}
