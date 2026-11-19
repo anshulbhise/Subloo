@@ -16,11 +16,12 @@ def trusted_origin():
     if origin is None:
         return True
 
-    # Allow localhost, 127.0.0.1, or Render frontend domains
+    # Allow localhost, 127.0.0.1, or Render/Vercel frontend domains
     allowed_patterns = [
         r"^http://localhost(:\d+)?$",
         r"^http://127\.0\.0\.1(:\d+)?$",
         r"^https://.*\.onrender\.com$",
+        r"^https://.*\.vercel\.app$",
     ]
 
     frontend_url = os.getenv("FRONTEND_URL")

@@ -2,14 +2,27 @@ const API_BASE_URL =
   import.meta.env?.VITE_API_BASE_URL || "http://localhost:5000/api";
 
 async function apiRequest(endpoint, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+  } catch (networkError) {
+    console.error(`Network error connecting to ${API_BASE_URL}${endpoint}:`, networkError);
+    if (API_BASE_URL.includes("localhost")) {
+      throw new Error(
+        `Cannot reach backend at ${API_BASE_URL}. Make sure your backend is running or set VITE_API_BASE_URL in your hosting settings.`
+      );
+    }
+    throw new Error(
+      `Unable to reach backend at ${API_BASE_URL}. The server may be waking up or offline.`
+    );
+  }
 
   const data = await response.json().catch(() => ({}));
 

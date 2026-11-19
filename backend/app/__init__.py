@@ -81,18 +81,15 @@ def create_app():
 
     # Frontend connection
     allowed_origins = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
+        re.compile(r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"),
+        re.compile(r"^https://.*\.onrender\.com$"),
+        re.compile(r"^https://.*\.vercel\.app$"),
     ]
     frontend_url = os.getenv("FRONTEND_URL")
     if frontend_url:
         for u in frontend_url.split(","):
             cleaned = u.strip().rstrip("/")
-            if cleaned and cleaned not in allowed_origins:
+            if cleaned:
                 allowed_origins.append(cleaned)
 
     CORS(
