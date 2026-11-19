@@ -1,4 +1,4 @@
-const API_BASE_URL =
+export const API_BASE_URL =
   import.meta.env?.VITE_API_BASE_URL || "http://localhost:5000/api";
 
 async function apiRequest(endpoint, options = {}) {
@@ -100,16 +100,117 @@ export const api = {
 
   getCategories: () => apiRequest("/subscriptions/categories"),
 
-  // Analytics & Dashboard
+  exportSubscriptionsCsvUrl: () => `${API_BASE_URL}/subscriptions/export/csv`,
+
+  // Analytics & Financial Reports
   getAnalyticsSummary: () => apiRequest("/analytics/summary"),
   getRenewals: () => apiRequest("/analytics/renewals"),
+  getFinancialReport: () => apiRequest("/analytics/report"),
+
+  // Notifications
+  getNotifications: (unreadOnly = false) => {
+    const query = unreadOnly ? "?unread_only=true" : "";
+    return apiRequest(`/notifications${query}`);
+  },
+  markNotificationRead: (id) =>
+    apiRequest(`/notifications/${id}/read`, {
+      method: "PUT",
+    }),
+  markAllNotificationsRead: () =>
+    apiRequest("/notifications/read-all", {
+      method: "PUT",
+    }),
+  deleteNotification: (id) =>
+    apiRequest(`/notifications/${id}`, {
+      method: "DELETE",
+    }),
+  checkReminders: () =>
+    apiRequest("/notifications/check-reminders", {
+      method: "POST",
+    }),
 
   // AI & Waste Intelligence
   getRecommendations: () => apiRequest("/intelligence/recommendations"),
+  getAssessmentHistory: (limit = 20) => apiRequest(`/intelligence/history?limit=${limit}`),
   assessSubscription: (id) =>
     apiRequest(`/intelligence/assess/${id}`, {
       method: "POST",
     }),
+
+  // Gmail Integration
+  getGmailStatus: () => apiRequest("/gmail/status"),
+  getGmailAuthUrl: () => apiRequest("/gmail/auth-url"),
+  syncGmail: () =>
+    apiRequest("/gmail/sync", {
+      method: "POST",
+    }),
+  disconnectGmail: () =>
+    apiRequest("/gmail/disconnect", {
+      method: "POST",
+    }),
+  getGmailSuggestions: () => apiRequest("/gmail/suggestions"),
+  approveGmailSuggestion: (id) =>
+    apiRequest(`/gmail/suggestions/${id}/approve`, {
+      method: "POST",
+    }),
+  rejectGmailSuggestion: (id) =>
+    apiRequest(`/gmail/suggestions/${id}/reject`, {
+      method: "POST",
+    }),
+
+  // Organizations & Teams RBAC
+  getOrganizations: () => apiRequest("/organizations"),
+  createOrganization: (data) =>
+    apiRequest("/organizations", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getOrganization: (id) => apiRequest(`/organizations/${id}`),
+  updateOrganization: (id, data) =>
+    apiRequest(`/organizations/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  getOrgMembers: (id) => apiRequest(`/organizations/${id}/members`),
+  inviteOrgMember: (id, data) =>
+    apiRequest(`/organizations/${id}/invitations`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateOrgMemberRole: (id, userId, role) =>
+    apiRequest(`/organizations/${id}/members/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify({ role }),
+    }),
+  removeOrgMember: (id, userId) =>
+    apiRequest(`/organizations/${id}/members/${userId}`, {
+      method: "DELETE",
+    }),
+  acceptOrgInvitation: (id) =>
+    apiRequest(`/organizations/invitations/${id}/accept`, {
+      method: "POST",
+    }),
+  rejectOrgInvitation: (id) =>
+    apiRequest(`/organizations/invitations/${id}/reject`, {
+      method: "POST",
+    }),
+  getOrgAnalytics: (id) => apiRequest(`/organizations/${id}/analytics`),
+  getOrgTeams: (id) => apiRequest(`/organizations/${id}/teams`),
+  createOrgTeam: (id, data) =>
+    apiRequest(`/organizations/${id}/teams`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateOrgTeam: (id, teamId, data) =>
+    apiRequest(`/organizations/${id}/teams/${teamId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deleteOrgTeam: (id, teamId) =>
+    apiRequest(`/organizations/${id}/teams/${teamId}`, {
+      method: "DELETE",
+    }),
+  getOrgAuditLogs: (id) => apiRequest(`/organizations/${id}/audit-logs`),
 };
 
 export default api;

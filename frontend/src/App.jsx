@@ -13,6 +13,7 @@ import SettingsView from "./components/SettingsView";
 import SubscriptionModal from "./components/SubscriptionModal";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
 import UsageCheckInModal from "./components/UsageCheckInModal";
+import NotificationCenter from "./components/NotificationCenter";
 
 const navigationItems = [
   {
@@ -309,6 +310,8 @@ function App() {
             )}
           </button>
 
+          <NotificationCenter />
+
           <button
             onClick={handleOpenAdd}
             className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--accent-primary)] text-white"
@@ -360,6 +363,9 @@ function App() {
               )}
               <span className="capitalize">{theme}</span>
             </button>
+
+            {/* Notification Center Bell */}
+            <NotificationCenter />
 
             {/* Quick Add Subscription */}
             <button

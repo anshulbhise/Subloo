@@ -5,6 +5,8 @@ import api from "../services/api";
 function SettingsView({ user, onProfileUpdated }) {
   const { theme, setTheme, resolvedTheme } = useTheme();
 
+  const [activeTab, setActiveTab] = useState("general"); // "general" | "gmail" | "organizations"
+
   const [fullName, setFullName] = useState(user?.full_name || "");
   const [currency, setCurrency] = useState(user?.profile?.currency || "INR");
   const [monthlyBudget, setMonthlyBudget] = useState(
@@ -17,6 +19,25 @@ function SettingsView({ user, onProfileUpdated }) {
   const [fetching, setFetching] = useState(true);
   const [saveSuccess, setSaveSuccess] = useState("");
   const [saveError, setSaveError] = useState("");
+
+  // Gmail states
+  const [gmailStatus, setGmailStatus] = useState(null);
+  const [gmailSuggestions, setGmailSuggestions] = useState([]);
+  const [gmailLoading, setGmailLoading] = useState(false);
+  const [gmailMessage, setGmailMessage] = useState("");
+
+  // Organization states
+  const [organizations, setOrganizations] = useState([]);
+  const [pendingInvites, setPendingInvites] = useState([]);
+  const [newOrgName, setNewOrgName] = useState("");
+  const [newOrgLegal, setNewOrgLegal] = useState("");
+  const [orgLoading, setOrgLoading] = useState(false);
+  const [orgMessage, setOrgMessage] = useState("");
+
+  // Invite state for selected organization
+  const [inviteOrgId, setInviteOrgId] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("member");
 
   // Load existing profile from backend on mount
   useEffect(() => {
@@ -45,6 +66,48 @@ function SettingsView({ user, onProfileUpdated }) {
       isMounted = false;
     };
   }, [user]);
+
+  // Load Gmail status & suggestions
+  const loadGmail = async () => {
+    try {
+      setGmailLoading(true);
+      const [statusRes, sugRes] = await Promise.all([
+        api.getGmailStatus().catch(() => null),
+        api.getGmailSuggestions().catch(() => ({ suggestions: [] })),
+      ]);
+      setGmailStatus(statusRes);
+      setGmailSuggestions(sugRes.suggestions || []);
+    } catch (err) {
+      console.error("Gmail load error:", err);
+    } finally {
+      setGmailLoading(false);
+    }
+  };
+
+  // Load Organizations
+  const loadOrgs = async () => {
+    try {
+      setOrgLoading(true);
+      const res = await api.getOrganizations();
+      setOrganizations(res.organizations || []);
+      setPendingInvites(res.pending_invitations || []);
+      if (res.organizations?.length > 0 && !inviteOrgId) {
+        setInviteOrgId(res.organizations[0].id);
+      }
+    } catch (err) {
+      console.error("Org load error:", err);
+    } finally {
+      setOrgLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "gmail") {
+      loadGmail();
+    } else if (activeTab === "organizations") {
+      loadOrgs();
+    }
+  }, [activeTab]);
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -76,6 +139,96 @@ function SettingsView({ user, onProfileUpdated }) {
     }
   };
 
+  // Gmail sync handler
+  const handleSyncGmail = async () => {
+    setGmailLoading(true);
+    setGmailMessage("");
+    try {
+      const res = await api.syncGmail();
+      setGmailMessage(res.message || "Sync complete!");
+      await loadGmail();
+    } catch (err) {
+      setGmailMessage(err.message || "Sync failed.");
+    } finally {
+      setGmailLoading(false);
+    }
+  };
+
+  // Approve detected subscription
+  const handleApproveSuggestion = async (id) => {
+    try {
+      const res = await api.approveGmailSuggestion(id);
+      setGmailMessage(res.message || "Subscription approved!");
+      setGmailSuggestions((prev) => prev.filter((s) => s.id !== id));
+      if (onProfileUpdated) onProfileUpdated();
+    } catch (err) {
+      setGmailMessage(err.message || "Approval failed.");
+    }
+  };
+
+  // Reject detected subscription
+  const handleRejectSuggestion = async (id) => {
+    try {
+      await api.rejectGmailSuggestion(id);
+      setGmailSuggestions((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      setGmailMessage(err.message || "Rejection failed.");
+    }
+  };
+
+  // Create organization
+  const handleCreateOrg = async (e) => {
+    e.preventDefault();
+    if (!newOrgName.trim()) return;
+    setOrgLoading(true);
+    setOrgMessage("");
+    try {
+      await api.createOrganization({
+        name: newOrgName.trim(),
+        legal_name: newOrgLegal.trim() || undefined,
+      });
+      setNewOrgName("");
+      setNewOrgLegal("");
+      setOrgMessage("Organization created successfully!");
+      await loadOrgs();
+    } catch (err) {
+      setOrgMessage(err.message || "Failed to create organization.");
+    } finally {
+      setOrgLoading(false);
+    }
+  };
+
+  // Send member invitation
+  const handleInviteMember = async (e) => {
+    e.preventDefault();
+    if (!inviteOrgId || !inviteEmail.trim()) return;
+    setOrgLoading(true);
+    setOrgMessage("");
+    try {
+      const res = await api.inviteOrgMember(inviteOrgId, {
+        email: inviteEmail.trim().toLowerCase(),
+        role: inviteRole,
+      });
+      setInviteEmail("");
+      setOrgMessage(res.message || "Invitation sent successfully!");
+    } catch (err) {
+      setOrgMessage(err.message || "Failed to invite member.");
+    } finally {
+      setOrgLoading(false);
+    }
+  };
+
+  // Accept invitation
+  const handleAcceptInvite = async (invId) => {
+    try {
+      await api.acceptOrgInvitation(invId);
+      setOrgMessage("Invitation accepted! You are now a member.");
+      await loadOrgs();
+    } catch (err) {
+      setOrgMessage(err.message || "Failed to accept invitation.");
+    }
+  };
+
   const currencySymbols = {
     INR: "₹",
     USD: "$",
@@ -89,150 +242,147 @@ function SettingsView({ user, onProfileUpdated }) {
       <div>
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight text-[var(--text-primary)]">
-            Settings & Preferences
+            Settings & Workspace
           </h1>
           <span className="rounded-full bg-[var(--accent-subtle)] text-[var(--accent-text)] border border-[var(--accent-border)] px-2.5 py-0.5 text-xs font-semibold">
-            Workspace
+            Preferences
           </span>
         </div>
         <p className="text-xs text-[var(--text-muted)] mt-1">
-          Customize your appearance theme, account details, and monthly financial budget.
+          Configure personal preferences, theme appearance, Gmail email sync, and organizational RBAC.
         </p>
+
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] mt-6">
+          <button
+            onClick={() => setActiveTab("general")}
+            className={`pb-3 px-1 text-xs font-bold transition border-b-2 ${
+              activeTab === "general"
+                ? "border-[var(--accent-primary)] text-[var(--accent-text)]"
+                : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            General & Budget
+          </button>
+          <button
+            onClick={() => setActiveTab("gmail")}
+            className={`pb-3 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 ${
+              activeTab === "gmail"
+                ? "border-[var(--accent-primary)] text-[var(--accent-text)]"
+                : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            <span>Gmail Integration</span>
+            {gmailSuggestions.length > 0 && (
+              <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[var(--accent-primary)] px-1 text-[9px] font-bold text-white">
+                {gmailSuggestions.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab("organizations")}
+            className={`pb-3 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 ${
+              activeTab === "organizations"
+                ? "border-[var(--accent-primary)] text-[var(--accent-text)]"
+                : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            <span>Organizations & Teams</span>
+            {pendingInvites.length > 0 && (
+              <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-bold text-white">
+                {pendingInvites.length}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
-      {saveSuccess && (
-        <div className="rounded-xl border border-[var(--accent-border)] bg-[var(--accent-subtle)] p-4 text-sm font-medium text-[var(--accent-text)] flex items-center gap-2">
-          <svg className="w-5 h-5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-          </svg>
-          <span>{saveSuccess}</span>
-        </div>
-      )}
+      {/* TAB 1: GENERAL & BUDGET */}
+      {activeTab === "general" && (
+        <form onSubmit={handleSave} className="space-y-6">
+          {saveSuccess && (
+            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 text-xs text-emerald-600 font-medium">
+              {saveSuccess}
+            </div>
+          )}
 
-      {saveError && (
-        <div className="rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 p-4 text-sm font-medium text-red-600 dark:text-red-400 flex items-center gap-2">
-          <svg className="w-5 h-5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-          </svg>
-          <span>{saveError}</span>
-        </div>
-      )}
+          {saveError && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3.5 text-xs text-red-500 font-medium">
+              {saveError}
+            </div>
+          )}
 
-      {/* SECTION 1: APPEARANCE & THEME */}
-      <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs">
-        <div className="flex items-start justify-between gap-4 mb-5">
-          <div>
-            <h2 className="text-base font-bold text-[var(--text-primary)]">
-              Appearance & Theme
+          {/* Theme Selector */}
+          <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs">
+            <h2 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider mb-1">
+              Interface Theme
             </h2>
-            <p className="text-xs text-[var(--text-muted)] mt-0.5">
-              Choose how Subloo looks to you. Active mode: <strong className="capitalize text-[var(--text-secondary)]">{resolvedTheme}</strong>
+            <p className="text-xs text-[var(--text-muted)] mb-5">
+              Choose your visual style. Theme preferences persist across your browser.
             </p>
-          </div>
-          <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-[var(--bg-surface-secondary)] text-[var(--text-secondary)]">
-            Persisted locally
-          </span>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-          {/* Light Theme Option */}
-          <button
-            type="button"
-            onClick={() => setTheme("light")}
-            className={`group text-left p-4 rounded-xl border transition flex flex-col justify-between ${
-              theme === "light"
-                ? "border-[var(--accent-primary)] bg-[var(--accent-subtle)] shadow-xs"
-                : "border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] hover:border-[var(--border-strong)]"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              </div>
-              {theme === "light" && (
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-white text-xs">
-                  ✓
-                </span>
-              )}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {[
+                {
+                  id: "light",
+                  title: "Light Mode",
+                  desc: "Warm white minimalist surfaces",
+                  icon: (
+                    <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                    </svg>
+                  ),
+                },
+                {
+                  id: "dark",
+                  title: "Dark Mode",
+                  desc: "Deep navy background and surfaces",
+                  icon: (
+                    <svg className="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
+                  ),
+                },
+                {
+                  id: "system",
+                  title: "System Preference",
+                  desc: `Automatically follows OS (${resolvedTheme})`,
+                  icon: (
+                    <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  ),
+                },
+              ].map((opt) => (
+                <button
+                  type="button"
+                  key={opt.id}
+                  onClick={() => setTheme(opt.id)}
+                  className={`flex flex-col items-start p-4 rounded-xl border text-left transition ${
+                    theme === opt.id
+                      ? "border-[var(--accent-primary)] bg-[var(--accent-subtle)] text-[var(--accent-text)] ring-1 ring-[var(--accent-primary)] shadow-xs"
+                      : "border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full mb-2">
+                    {opt.icon}
+                    {theme === opt.id && (
+                      <span className="flex h-2 w-2 rounded-full bg-[var(--accent-primary)]" />
+                    )}
+                  </div>
+                  <span className="text-xs font-bold text-[var(--text-primary)]">{opt.title}</span>
+                  <span className="text-[11px] text-[var(--text-muted)] mt-1">{opt.desc}</span>
+                </button>
+              ))}
             </div>
-            <div>
-              <p className="text-sm font-bold text-[var(--text-primary)]">Light Mode</p>
-              <p className="text-xs text-[var(--text-muted)] mt-0.5">Warm, minimal off-white canvas with emerald accents.</p>
-            </div>
-          </button>
+          </section>
 
-          {/* Dark Theme Option */}
-          <button
-            type="button"
-            onClick={() => setTheme("dark")}
-            className={`group text-left p-4 rounded-xl border transition flex flex-col justify-between ${
-              theme === "dark"
-                ? "border-[var(--accent-primary)] bg-[var(--accent-subtle)] shadow-xs"
-                : "border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] hover:border-[var(--border-strong)]"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-400">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                </svg>
-              </div>
-              {theme === "dark" && (
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-white text-xs">
-                  ✓
-                </span>
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-bold text-[var(--text-primary)]">Dark Mode</p>
-              <p className="text-xs text-[var(--text-muted)] mt-0.5">Deep obsidian navy surfaces engineered for low-light focus.</p>
-            </div>
-          </button>
+          {/* Account & Profile */}
+          <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs space-y-4">
+            <h2 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider mb-1">
+              Account Profile
+            </h2>
 
-          {/* System Default Option */}
-          <button
-            type="button"
-            onClick={() => setTheme("system")}
-            className={`group text-left p-4 rounded-xl border transition flex flex-col justify-between ${
-              theme === "system"
-                ? "border-[var(--accent-primary)] bg-[var(--accent-subtle)] shadow-xs"
-                : "border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] hover:border-[var(--border-strong)]"
-            }`}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/10 text-[var(--accent-primary)]">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-              </div>
-              {theme === "system" && (
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent-primary)] text-white text-xs">
-                  ✓
-                </span>
-              )}
-            </div>
-            <div>
-              <p className="text-sm font-bold text-[var(--text-primary)]">System Default</p>
-              <p className="text-xs text-[var(--text-muted)] mt-0.5">Syncs automatically with your operating system color scheme.</p>
-            </div>
-          </button>
-        </div>
-      </section>
-
-      {/* FORM: PROFILE & BUDGET */}
-      <form onSubmit={handleSave} className="space-y-6">
-        {/* SECTION 2: PROFILE DETAILS */}
-        <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs">
-          <h2 className="text-base font-bold text-[var(--text-primary)] mb-1">
-            Account Profile
-          </h2>
-          <p className="text-xs text-[var(--text-muted)] mb-5">
-            Your personal user identity across the Subloo subscription platform.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
                 Full Name
@@ -241,9 +391,7 @@ function SettingsView({ user, onProfileUpdated }) {
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="e.g. Anshul Bhise"
-                maxLength={120}
-                required
+                placeholder="Your full name"
                 className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
               />
             </div>
@@ -252,51 +400,40 @@ function SettingsView({ user, onProfileUpdated }) {
               <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
                 Email Address
               </label>
-              <div className="relative">
-                <input
-                  type="email"
-                  value={user?.email || ""}
-                  disabled
-                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-hover)] px-3.5 py-2.5 text-sm text-[var(--text-secondary)] cursor-not-allowed opacity-80"
-                />
-                <span className="absolute right-3 top-2.5 text-[11px] font-semibold text-[var(--accent-text)] bg-[var(--accent-subtle)] px-2 py-0.5 rounded-full">
-                  Verified
-                </span>
-              </div>
-              <p className="text-[11px] text-[var(--text-muted)] mt-1">
-                Account email is strictly tied to your authenticated workspace.
+              <input
+                type="email"
+                value={user?.email || ""}
+                disabled
+                className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)]/50 px-3.5 py-2.5 text-sm text-[var(--text-muted)] cursor-not-allowed outline-none"
+              />
+              <p className="text-[11px] text-[var(--text-muted)] mt-1.5">
+                Primary identifier and session security email.
               </p>
             </div>
-          </div>
-        </section>
+          </section>
 
-        {/* SECTION 3: BUDGET & CURRENCY */}
-        <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs">
-          <h2 className="text-base font-bold text-[var(--text-primary)] mb-1">
-            Budget & Financial Currency
-          </h2>
-          <p className="text-xs text-[var(--text-muted)] mb-5">
-            Set your target monthly recurring spending ceiling and display currency.
-          </p>
+          {/* Budget & Currency */}
+          <section className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs space-y-4">
+            <h2 className="text-sm font-bold text-[var(--text-primary)] uppercase tracking-wider mb-1">
+              Currency & Budget Ceiling
+            </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {/* Currency Selector */}
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-2">
                 Preferred Currency
               </label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {[
-                  { code: "INR", label: "₹ INR" },
-                  { code: "USD", label: "$ USD" },
-                  { code: "EUR", label: "€ EUR" },
-                  { code: "GBP", label: "£ GBP" },
+                  { code: "INR", label: "INR (₹)" },
+                  { code: "USD", label: "USD ($)" },
+                  { code: "EUR", label: "EUR (€)" },
+                  { code: "GBP", label: "GBP (£)" },
                 ].map((c) => (
                   <button
-                    key={c.code}
                     type="button"
+                    key={c.code}
                     onClick={() => setCurrency(c.code)}
-                    className={`py-2 px-3 text-xs font-bold rounded-xl border transition ${
+                    className={`px-3 py-2.5 rounded-xl border text-xs font-semibold transition ${
                       currency === c.code
                         ? "border-[var(--accent-primary)] bg-[var(--accent-subtle)] text-[var(--accent-text)]"
                         : "border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)]"
@@ -306,12 +443,8 @@ function SettingsView({ user, onProfileUpdated }) {
                   </button>
                 ))}
               </div>
-              <p className="text-[11px] text-[var(--text-muted)] mt-1.5">
-                All multi-currency subscriptions will normalize into this target currency.
-              </p>
             </div>
 
-            {/* Monthly Budget */}
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
                 Monthly Spending Budget
@@ -331,37 +464,308 @@ function SettingsView({ user, onProfileUpdated }) {
                 />
               </div>
               <p className="text-[11px] text-[var(--text-muted)] mt-1.5">
-                Powers the budget progress bar and monthly burn gauge on your Overview dashboard.
+                Subloo uses this limit to evaluate budget thresholds and trigger proactive warnings.
               </p>
             </div>
+          </section>
+
+          <div className="flex items-center justify-end pt-2">
+            <button
+              type="submit"
+              disabled={loading || fetching}
+              className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-6 py-2.5 text-sm font-semibold transition shadow-xs disabled:opacity-60"
+            >
+              {loading ? "Saving..." : "Save Preferences"}
+            </button>
           </div>
-        </section>
+        </form>
+      )}
 
-        {/* Action bar */}
-        <div className="flex items-center justify-between pt-2">
-          <p className="text-xs text-[var(--text-muted)]">
-            Changes take effect immediately across all workspace views.
-          </p>
+      {/* TAB 2: GMAIL INTEGRATION */}
+      {activeTab === "gmail" && (
+        <div className="space-y-6">
+          {gmailMessage && (
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] p-3.5 text-xs text-[var(--text-primary)]">
+              {gmailMessage}
+            </div>
+          )}
 
-          <button
-            type="submit"
-            disabled={loading || fetching}
-            className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-6 py-2.5 text-sm font-semibold transition shadow-xs disabled:opacity-60"
-          >
-            {loading ? (
-              <>
-                <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-                </svg>
-                <span>Saving...</span>
-              </>
-            ) : (
-              <span>Save Settings</span>
+          {/* Connection Card */}
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-500/10 text-red-500 text-xl font-bold">
+                  G
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                    Gmail Subscription Detector
+                  </h3>
+                  <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                    {gmailStatus?.is_connected
+                      ? `Connected as ${gmailStatus.gmail_address}`
+                      : "Scan your billing receipts to automatically discover subscriptions."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSyncGmail}
+                  disabled={gmailLoading}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-4 py-2 text-xs font-semibold transition shadow-xs disabled:opacity-50"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  <span>{gmailLoading ? "Scanning..." : "Scan Receipts Now"}</span>
+                </button>
+              </div>
+            </div>
+
+            {gmailStatus?.setup_required && (
+              <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-[var(--text-secondary)]">
+                <p className="font-semibold text-amber-500 mb-1">OAuth Credentials Setup</p>
+                <p className="leading-relaxed">
+                  To connect live Google accounts, provide <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> in your Render environment variables. You can still test receipts scanning with the built-in detection pattern engine above!
+                </p>
+              </div>
             )}
-          </button>
+          </div>
+
+          {/* Pending Suggestions */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                Detected Subscription Suggestions ({gmailSuggestions.length})
+              </h3>
+            </div>
+
+            {gmailSuggestions.length === 0 ? (
+              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
+                <p className="text-xs font-semibold text-[var(--text-secondary)]">No pending suggestions</p>
+                <p className="text-[11px] text-[var(--text-muted)] mt-1">
+                  Click "Scan Receipts Now" to parse subscriptions from your billing emails.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {gmailSuggestions.map((sug) => (
+                  <div
+                    key={sug.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 hover:border-[var(--border-strong)] transition"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-[var(--text-primary)]">
+                          {sug.detected_provider}
+                        </span>
+                        <span className="rounded-full bg-emerald-500/10 text-emerald-600 px-2 py-0.5 text-[10px] font-bold">
+                          {sug.detected_currency} {sug.detected_amount.toFixed(2)} / {sug.detected_billing_interval}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[var(--text-secondary)] mt-1">
+                        {sug.email_subject}
+                      </p>
+                      <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                        Detected from {sug.email_sender} • Confidence: {Math.round(sug.confidence * 100)}%
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleApproveSuggestion(sug.id)}
+                        className="rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-3.5 py-1.5 text-xs font-semibold transition"
+                      >
+                        Approve & Add
+                      </button>
+                      <button
+                        onClick={() => handleRejectSuggestion(sug.id)}
+                        className="rounded-xl border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 px-3 py-1.5 text-xs font-semibold transition"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </form>
+      )}
+
+      {/* TAB 3: ORGANIZATIONS & TEAMS */}
+      {activeTab === "organizations" && (
+        <div className="space-y-6">
+          {orgMessage && (
+            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] p-3.5 text-xs text-[var(--text-primary)]">
+              {orgMessage}
+            </div>
+          )}
+
+          {/* Pending Invitations */}
+          {pendingInvites.length > 0 && (
+            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-500 mb-2">
+                Pending Invitations ({pendingInvites.length})
+              </h3>
+              <div className="space-y-2">
+                {pendingInvites.map((inv) => (
+                  <div
+                    key={inv.id}
+                    className="flex items-center justify-between rounded-xl bg-[var(--bg-surface)] p-3 text-xs border border-[var(--border-subtle)]"
+                  >
+                    <div>
+                      <p className="font-bold text-[var(--text-primary)]">{inv.organization_name}</p>
+                      <p className="text-[10px] text-[var(--text-muted)]">Invited as {inv.role}</p>
+                    </div>
+                    <button
+                      onClick={() => handleAcceptInvite(inv.id)}
+                      className="rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-3 py-1 text-xs font-semibold"
+                    >
+                      Accept Invite
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Existing Organizations */}
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-4">
+              Your Organizations ({organizations.length})
+            </h3>
+
+            {organizations.length === 0 ? (
+              <p className="text-xs text-[var(--text-muted)]">
+                You are not currently part of any organizations. Create one below to manage team subscriptions with RBAC.
+              </p>
+            ) : (
+              <div className="grid gap-3">
+                {organizations.map((org) => (
+                  <div
+                    key={org.id}
+                    className="flex items-center justify-between rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] p-4"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-[var(--text-primary)]">{org.name}</span>
+                        <span className="rounded-full bg-[var(--accent-subtle)] text-[var(--accent-text)] px-2 py-0.5 text-[10px] font-bold uppercase">
+                          {org.role}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[var(--text-muted)] mt-1">
+                        {org.member_count} member{org.member_count === 1 ? "" : "s"} • {org.team_count} team{org.team_count === 1 ? "" : "s"} • {org.subscription_count} subscription{org.subscription_count === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Create New Organization */}
+          <form onSubmit={handleCreateOrg} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs space-y-4">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+              Create New Organization
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                  Organization Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newOrgName}
+                  onChange={(e) => setNewOrgName(e.target.value)}
+                  placeholder="e.g. Acme Corp"
+                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                  Legal / Company Name
+                </label>
+                <input
+                  type="text"
+                  value={newOrgLegal}
+                  onChange={(e) => setNewOrgLegal(e.target.value)}
+                  placeholder="e.g. Acme Corporation LLC"
+                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
+                />
+              </div>
+            </div>
+            <button
+              type="submit"
+              disabled={orgLoading || !newOrgName.trim()}
+              className="rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-4 py-2 text-xs font-semibold disabled:opacity-50"
+            >
+              Create Organization
+            </button>
+          </form>
+
+          {/* Invite Members */}
+          {organizations.length > 0 && (
+            <form onSubmit={handleInviteMember} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs space-y-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                Invite Organization Member
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                    Organization
+                  </label>
+                  <select
+                    value={inviteOrgId}
+                    onChange={(e) => setInviteOrgId(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
+                  >
+                    {organizations.map((org) => (
+                      <option key={org.id} value={org.id}>{org.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                    User Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="teammate@company.com"
+                    className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                    Role (RBAC)
+                  </label>
+                  <select
+                    value={inviteRole}
+                    onChange={(e) => setInviteRole(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
+                  >
+                    <option value="member">Team Member</option>
+                    <option value="office_manager">Office Manager</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={orgLoading || !inviteEmail.trim()}
+                className="rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-4 py-2 text-xs font-semibold disabled:opacity-50"
+              >
+                Send Invitation
+              </button>
+            </form>
+          )}
+        </div>
+      )}
     </div>
   );
 }

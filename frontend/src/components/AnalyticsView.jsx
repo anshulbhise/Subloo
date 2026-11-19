@@ -1,6 +1,8 @@
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
+import FinancialReportModal from "./FinancialReportModal";
 
 function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
+  const [reportModalOpen, setReportModalOpen] = useState(false);
   // Compute analytics derived from actual subscriptions
   const stats = useMemo(() => {
     if (!subscriptions || subscriptions.length === 0) {
@@ -84,15 +86,27 @@ function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
           </p>
         </div>
 
-        <button
-          onClick={onAddClick}
-          className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-5 py-2.5 text-sm font-semibold transition shadow-xs shrink-0"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
-          </svg>
-          Add Subscription
-        </button>
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            onClick={() => setReportModalOpen(true)}
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-4 py-2.5 text-xs font-semibold shadow-2xs transition"
+          >
+            <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Financial Report</span>
+          </button>
+
+          <button
+            onClick={onAddClick}
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-5 py-2.5 text-sm font-semibold transition shadow-xs"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Subscription
+          </button>
+        </div>
       </div>
 
       {!hasData ? (
@@ -281,6 +295,11 @@ function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
           </div>
         </>
       )}
+
+      <FinancialReportModal
+        isOpen={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+      />
     </div>
   );
 }

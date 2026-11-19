@@ -4,14 +4,15 @@ from cryptography.fernet import Fernet, InvalidToken
 
 
 def get_encryption():
-    """Load the private encryption key from environment variables."""
+    """Load the private encryption key from environment variables or derive a fallback key from SECRET_KEY."""
+    import base64
+    import hashlib
 
     key = os.getenv("TOKEN_ENCRYPTION_KEY")
 
     if not key:
-        raise RuntimeError(
-            "TOKEN_ENCRYPTION_KEY is missing from environment."
-        )
+        secret = os.getenv("SECRET_KEY", "subloo-dev-secret-key-encryption-fallback")
+        key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode()).digest()).decode()
 
     try:
         return Fernet(key.encode("utf-8"))

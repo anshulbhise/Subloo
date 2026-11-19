@@ -1,3 +1,4 @@
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -254,3 +255,115 @@ def serialize_assessment(assessment, sub):
         "alternative_url": assessment.alternative_url,
         "created_at": assessment.created_at.isoformat() if assessment.created_at else None,
     }
+
+
+def normalize_root_brand(raw_name):
+    """Extract the core brand name by stripping common plan tier words."""
+    clean = (raw_name or "").lower()
+    clean = re.sub(r"\b(premium|standard|basic|plus|pro|ultra|family|individual|personal|monthly|yearly|annual|subscription|plan|tier)\b", "", clean)
+    clean = re.sub(r"[^a-z0-9]", "", clean)
+    return clean or re.sub(r"[^a-z0-9]", "", (raw_name or "").lower())
+
+
+def detect_duplicates(subscriptions):
+    """
+    Detect multiple active subscriptions with identical or near-identical providers/names.
+    Returns a list of duplicate groups with combined costs and recommendation.
+    """
+    groups = {}
+    for sub in subscriptions:
+        if sub.status not in {"active", "trial"}:
+            continue
+        raw_name = (sub.custom_name or (sub.provider.name if sub.provider else "")).strip()
+        brand_key = normalize_root_brand(raw_name)
+        key = brand_key or (f"prov_{sub.provider_id}" if sub.provider_id else "")
+
+        if not key:
+            continue
+        if key not in groups:
+            groups[key] = []
+        groups[key].append(sub)
+
+    duplicates = []
+    for key, subs in groups.items():
+        if len(subs) > 1:
+            total_monthly = sum(calculate_monthly_cost(s.amount, s.billing_interval) for s in subs)
+            first_cost = calculate_monthly_cost(subs[0].amount, subs[0].billing_interval)
+            potential_savings = total_monthly - first_cost
+            primary_name = subs[0].custom_name or (subs[0].provider.name if subs[0].provider else "Subscription")
+
+            duplicates.append({
+                "group_key": key,
+                "name": primary_name,
+                "count": len(subs),
+                "combined_monthly_cost": float(total_monthly),
+                "potential_monthly_savings": float(potential_savings),
+                "potential_yearly_savings": float(potential_savings * Decimal("12")),
+                "subscriptions": [
+                    {
+                        "id": s.id,
+                        "name": s.custom_name or (s.provider.name if s.provider else "Subscription"),
+                        "amount": float(s.amount),
+                        "currency": s.currency,
+                        "billing_interval": s.billing_interval,
+                        "monthly_cost": float(calculate_monthly_cost(s.amount, s.billing_interval)),
+                    }
+                    for s in subs
+                ],
+                "reason": (
+                    f"Detected {len(subs)} overlapping active subscriptions for '{primary_name}' "
+                    f"totaling ₹{total_monthly:.2f}/mo. Consolidating or cancelling duplicates saves ₹{potential_savings:.2f}/mo."
+                )
+            })
+    return duplicates
+
+
+def calculate_budget_insights(user_id, monthly_recurring, total_potential_monthly):
+    """
+    Generate budget utilization intelligence comparing current burn to user budget,
+    explaining how identified waste savings can bring the user below their target budget.
+    """
+    profile = UserProfile.query.filter_by(user_id=user_id).first()
+    if not profile or not profile.monthly_budget or profile.monthly_budget <= 0:
+        return None
+
+    budget = Decimal(str(profile.monthly_budget))
+    recurring = Decimal(str(monthly_recurring))
+    savings = Decimal(str(total_potential_monthly))
+
+    ratio = (recurring / budget) if budget > 0 else Decimal("0.00")
+    exceeded = recurring > budget
+    excess = (recurring - budget) if exceeded else Decimal("0.00")
+
+    projected_burn_after_savings = max(Decimal("0.00"), recurring - savings)
+    projected_ratio_after_savings = (projected_burn_after_savings / budget) if budget > 0 else Decimal("0.00")
+
+    if exceeded:
+        if projected_burn_after_savings <= budget:
+            explanation = (
+                f"You are currently ₹{excess:.2f} over your ₹{budget:.2f} monthly budget ({int(ratio * 100)}% utilized). "
+                f"Applying the detected savings of ₹{savings:.2f}/mo will successfully bring you under budget at ₹{projected_burn_after_savings:.2f}/mo."
+            )
+        else:
+            explanation = (
+                f"You are currently ₹{excess:.2f} over your ₹{budget:.2f} monthly budget. "
+                f"Even with ₹{savings:.2f}/mo in identified savings, an additional ₹{projected_burn_after_savings - budget:.2f}/mo in reductions is needed."
+            )
+    else:
+        explanation = (
+            f"You are within your ₹{budget:.2f} monthly budget ({int(ratio * 100)}% utilized). "
+            f"Applying identified savings will expand your monthly surplus to ₹{budget - projected_burn_after_savings:.2f}."
+        )
+
+    return {
+        "budget": float(budget),
+        "currency": profile.currency,
+        "current_monthly_burn": float(recurring),
+        "utilization_percentage": round(float(ratio * 100), 1),
+        "is_exceeded": exceeded,
+        "excess_amount": float(excess),
+        "projected_monthly_burn_after_savings": float(projected_burn_after_savings),
+        "projected_utilization_percentage": round(float(projected_ratio_after_savings * 100), 1),
+        "explanation": explanation,
+    }
+

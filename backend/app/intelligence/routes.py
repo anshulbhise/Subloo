@@ -1,8 +1,15 @@
 from decimal import Decimal
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from app.common.auth import get_current_user_id, login_required
-from app.intelligence.service import assess_subscription, serialize_assessment
+from app.intelligence.models import SubscriptionAssessment
+from app.intelligence.service import (
+    assess_subscription,
+    calculate_budget_insights,
+    detect_duplicates,
+    serialize_assessment,
+)
+from app.preprocessing.service import calculate_monthly_cost
 from app.subscriptions.models import Subscription
 
 intelligence_bp = Blueprint(
@@ -50,12 +57,72 @@ def get_recommendations():
         key=lambda r: (risk_rank.get(r["risk_level"], 9), -r["estimated_monthly_savings"])
     )
 
+    # 1. Detect duplicate subscriptions
+    duplicates = detect_duplicates(active_subscriptions)
+    duplicate_monthly_savings = sum(Decimal(str(d["potential_monthly_savings"])) for d in duplicates)
+
+    # 2. Total monthly recurring spend
+    total_monthly_recurring = sum(
+        calculate_monthly_cost(s.amount, s.billing_interval) for s in active_subscriptions
+    )
+
+    # Combined savings across underutilization + duplicates
+    combined_monthly_savings = total_potential_monthly + duplicate_monthly_savings
+    combined_yearly_savings = combined_monthly_savings * Decimal("12")
+
+    # 3. Budget utilization intelligence
+    budget_insights = calculate_budget_insights(
+        user_id,
+        float(total_monthly_recurring),
+        float(combined_monthly_savings)
+    )
+
     return jsonify({
         "status": "success",
         "waste_count": waste_count,
-        "total_potential_monthly_savings": float(total_potential_monthly),
-        "total_potential_yearly_savings": float(total_potential_yearly),
+        "duplicate_count": len(duplicates),
+        "total_potential_monthly_savings": float(combined_monthly_savings),
+        "total_potential_yearly_savings": float(combined_yearly_savings),
+        "duplicates": duplicates,
+        "budget_insights": budget_insights,
         "recommendations": recommendations,
+    }), 200
+
+
+@intelligence_bp.route("/history", methods=["GET"])
+@login_required
+def get_assessment_history():
+    """Return historical assessment records for the user's subscriptions."""
+    user_id = get_current_user_id()
+    limit = min(int(request.args.get("limit") or 20), 50)
+
+    user_subs = Subscription.query.filter_by(owner_user_id=user_id).all()
+    sub_ids = [s.id for s in user_subs]
+    sub_map = {s.id: s for s in user_subs}
+
+    if not sub_ids:
+        return jsonify({
+            "status": "success",
+            "history": []
+        }), 200
+
+    assessments = (
+        SubscriptionAssessment.query.filter(SubscriptionAssessment.subscription_id.in_(sub_ids))
+        .order_by(SubscriptionAssessment.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    history = [
+        serialize_assessment(a, sub_map[a.subscription_id])
+        for a in assessments
+        if a.subscription_id in sub_map
+    ]
+
+    return jsonify({
+        "status": "success",
+        "count": len(history),
+        "history": history
     }), 200
 
 

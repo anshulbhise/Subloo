@@ -147,6 +147,16 @@ function AIInsightsView({ onAddClick, onCheckInClick, onEditClick }) {
                     Waste Alerts
                   </span>
                 </div>
+                {data.duplicate_count > 0 && (
+                  <div className="rounded-xl bg-[var(--bg-surface)] px-4 py-3 border border-amber-500/30 text-center shadow-xs">
+                    <span className="block text-xl font-bold text-amber-500">
+                      {data.duplicate_count}
+                    </span>
+                    <span className="text-[10px] uppercase font-semibold text-[var(--text-muted)]">
+                      Duplicates
+                    </span>
+                  </div>
+                )}
                 <div className="rounded-xl bg-[var(--bg-surface)] px-4 py-3 border border-[var(--border-subtle)] text-center shadow-xs">
                   <span className="block text-xl font-bold text-[var(--accent-primary)]">
                     {data.recommendations.length}
@@ -158,6 +168,71 @@ function AIInsightsView({ onAddClick, onCheckInClick, onEditClick }) {
               </div>
             </div>
           </div>
+
+          {/* Budget Intelligence Card */}
+          {data.budget_insights && (
+            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-xs">
+              <div className="flex items-center gap-2 mb-2 text-[var(--accent-text)]">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-xs font-bold uppercase tracking-wider">
+                  Target Budget Utilization Forecast
+                </span>
+              </div>
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
+                {data.budget_insights.explanation}
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-3 border-t border-[var(--border-subtle)]">
+                <div>
+                  <p className="text-[10px] uppercase text-[var(--text-muted)] font-semibold">Monthly Budget</p>
+                  <p className="text-sm font-bold text-[var(--text-primary)]">₹{data.budget_insights.budget.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-[var(--text-muted)] font-semibold">Current Burn</p>
+                  <p className="text-sm font-bold text-[var(--text-primary)]">₹{data.budget_insights.current_monthly_burn.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-[var(--text-muted)] font-semibold">Current Utilization</p>
+                  <p className={`text-sm font-bold ${data.budget_insights.is_exceeded ? 'text-red-500' : 'text-[var(--accent-primary)]'}`}>
+                    {data.budget_insights.utilization_percentage}%
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase text-[var(--text-muted)] font-semibold">Post-Savings Burn</p>
+                  <p className="text-sm font-bold text-emerald-600">
+                    ₹{data.budget_insights.projected_monthly_burn_after_savings.toFixed(2)} ({data.budget_insights.projected_utilization_percentage}%)
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Overlapping Duplicates Detection */}
+          {data.duplicates && data.duplicates.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-base font-bold text-[var(--text-primary)] flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-500/10 text-amber-500 text-xs">!</span>
+                Detected Duplicate Subscriptions ({data.duplicates.length})
+              </h2>
+              <div className="grid gap-3">
+                {data.duplicates.map((dup, idx) => (
+                  <div key={idx} className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-bold text-[var(--text-primary)]">{dup.name} ({dup.count} active instances)</h4>
+                        <p className="text-xs text-[var(--text-secondary)] mt-0.5">{dup.reason}</p>
+                      </div>
+                      <div className="text-left sm:text-right shrink-0">
+                        <span className="text-[10px] uppercase font-semibold text-[var(--text-muted)] block">Save by Cancelling Duplicate</span>
+                        <span className="text-sm font-extrabold text-emerald-600">+₹{dup.potential_monthly_savings.toFixed(2)}/mo</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Recommendations List */}
           <div className="space-y-4">

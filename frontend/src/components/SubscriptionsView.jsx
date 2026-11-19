@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import api from "../services/api";
 
 function SubscriptionsView({
   subscriptions = [],
@@ -11,6 +12,30 @@ function SubscriptionsView({
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState("renewal"); // "renewal" | "cost" | "name"
+  const [exporting, setExporting] = useState(false);
+
+  const handleExportCsv = async () => {
+    try {
+      setExporting(true);
+      const res = await fetch(api.exportSubscriptionsCsvUrl(), {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to export subscriptions CSV");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `subloo_subscriptions_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err.message || "Export failed.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const filteredSubscriptions = useMemo(() => {
     let list = subscriptions.filter((sub) => {
@@ -96,15 +121,29 @@ function SubscriptionsView({
           </p>
         </div>
 
-        <button
-          onClick={onAddClick}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-5 py-2.5 text-sm font-semibold transition shadow-xs shrink-0"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
-          </svg>
-          Add Subscription
-        </button>
+        <div className="flex items-center gap-2.5 shrink-0">
+          <button
+            onClick={handleExportCsv}
+            disabled={exporting || subscriptions.length === 0}
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] px-4 py-2.5 text-xs font-semibold shadow-2xs transition disabled:opacity-50"
+            title="Download CSV spreadsheet of your subscriptions"
+          >
+            <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>{exporting ? "Exporting..." : "Export CSV"}</span>
+          </button>
+
+          <button
+            onClick={onAddClick}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-5 py-2.5 text-sm font-semibold transition shadow-xs"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
+            </svg>
+            Add Subscription
+          </button>
+        </div>
       </div>
 
       {/* Filters, Search & Sorting */}

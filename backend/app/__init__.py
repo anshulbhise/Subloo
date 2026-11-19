@@ -15,6 +15,9 @@ from app.auth.routes import auth_bp
 from app.subscriptions.routes import subscriptions_bp
 from app.analytics.routes import analytics_bp
 from app.intelligence.routes import intelligence_bp
+from app.notifications.routes import notifications_bp
+from app.gmail.routes import gmail_bp
+from app.organizations.routes import organizations_bp
 
 
 def create_app():
@@ -84,6 +87,7 @@ def create_app():
     from app.intelligence import models as intelligence_models
     from app.subscriptions import models as subscription_models
     from app.teams import models as team_models
+    from app.notifications import models as notification_models
 
     with app.app_context():
         try:
@@ -99,6 +103,9 @@ def create_app():
     app.register_blueprint(subscriptions_bp)
     app.register_blueprint(analytics_bp)
     app.register_blueprint(intelligence_bp)
+    app.register_blueprint(notifications_bp)
+    app.register_blueprint(gmail_bp)
+    app.register_blueprint(organizations_bp)
 
     # Frontend connection
     allowed_origins = [

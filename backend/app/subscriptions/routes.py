@@ -1,9 +1,11 @@
 import calendar
+import csv
+import io
 import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 
 from app.common.auth import get_current_user_id, login_required
 from app.database.extensions import db
@@ -199,6 +201,65 @@ def list_subscriptions():
 
 
 # --------------------------------------------------
+# CSV EXPORT FOR CURRENT USER
+# --------------------------------------------------
+@subscriptions_bp.route("/export/csv", methods=["GET"])
+@login_required
+def export_subscriptions_csv():
+    user_id = get_current_user_id()
+    subscriptions = (
+        Subscription.query.filter_by(owner_user_id=user_id)
+        .order_by(Subscription.created_at.desc())
+        .all()
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Subscription Name",
+        "Provider",
+        "Category",
+        "Amount",
+        "Currency",
+        "Billing Interval",
+        "Monthly Equivalent",
+        "Status",
+        "Start Date",
+        "Next Renewal Date",
+        "Auto Renew",
+        "Notes"
+    ])
+
+    for sub in subscriptions:
+        monthly_cost = calculate_monthly_cost(sub.amount, sub.billing_interval)
+        writer.writerow([
+            sub.custom_name or (sub.provider.name if sub.provider else "Subscription"),
+            sub.provider.name if sub.provider else "",
+            sub.category.name if sub.category else "Uncategorized",
+            f"{sub.amount:.2f}",
+            sub.currency,
+            sub.billing_interval,
+            f"{monthly_cost:.2f}",
+            sub.status,
+            sub.start_date.isoformat() if sub.start_date else "",
+            sub.next_billing_date.isoformat() if sub.next_billing_date else "",
+            "Yes" if sub.auto_renew else "No",
+            sub.notes or ""
+        ])
+
+    csv_data = output.getvalue()
+    today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return Response(
+        csv_data,
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename=subloo_subscriptions_{today_str}.csv",
+            "Content-Type": "text/csv; charset=utf-8"
+        }
+    )
+
+
+# --------------------------------------------------
 # 2. CREATE A NEW SUBSCRIPTION
 # --------------------------------------------------
 @subscriptions_bp.route("", methods=["POST"])
@@ -337,6 +398,18 @@ def create_subscription():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Failed to save subscription: {str(e)}"}), 500
+
+    try:
+        from app.notifications.service import create_notification
+        create_notification(
+            user_id=user_id,
+            notif_type="subscription_created",
+            title=f"Subscription Added: {name}",
+            message=f"Added {name} ({currency} {amount:.2f} / {interval}) to your active commitments.",
+            data={"subscription_id": subscription.id}
+        )
+    except Exception:
+        pass
 
     return jsonify({
         "status": "success",
@@ -521,12 +594,26 @@ def delete_subscription(sub_id):
     if not subscription:
         return jsonify({"error": "Subscription not found."}), 404
 
+    sub_name = subscription.custom_name or (subscription.provider.name if subscription.provider else "Subscription")
+
     try:
         db.session.delete(subscription)
         db.session.commit()
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Failed to delete subscription: {str(e)}"}), 500
+
+    try:
+        from app.notifications.service import create_notification
+        create_notification(
+            user_id=user_id,
+            notif_type="subscription_deleted",
+            title=f"Subscription Deleted: {sub_name}",
+            message=f"Removed {sub_name} from your tracked subscriptions.",
+            data={"subscription_id": sub_id}
+        )
+    except Exception:
+        pass
 
     return jsonify({
         "status": "success",

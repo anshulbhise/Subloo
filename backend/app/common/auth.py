@@ -1,10 +1,47 @@
 import os
 import re
+import time
+from collections import defaultdict
 from functools import wraps
 from flask import jsonify, request, session
 
 from app.database.extensions import db
 from app.users.models import User
+
+# In-memory sliding window rate limiter
+_request_records = defaultdict(list)
+
+
+def rate_limit(max_requests=10, window_seconds=60):
+    """
+    Decorator to prevent brute-force attacks on sensitive endpoints.
+    Tracks client IP address and enforces request ceilings.
+    """
+    def decorator(f):
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            # Resolve client IP behind reverse proxy like Render / Cloudflare
+            client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+            if "," in client_ip:
+                client_ip = client_ip.split(",")[0].strip()
+
+            now = time.time()
+            cutoff = now - window_seconds
+
+            # Purge expired timestamps
+            timestamps = [t for t in _request_records[client_ip] if t > cutoff]
+            _request_records[client_ip] = timestamps
+
+            if len(timestamps) >= max_requests:
+                return jsonify({
+                    "error": "Too many requests. Please wait a minute and try again.",
+                    "status": "rate_limited"
+                }), 429
+
+            _request_records[client_ip].append(now)
+            return f(*args, **kwargs)
+        return wrapped
+    return decorator
 
 
 def trusted_origin():
@@ -14,15 +51,18 @@ def trusted_origin():
     """
     origin = request.headers.get("Origin")
 
-    if origin is None:
+    if origin is None or origin == "null":
         return True
 
-    # Allow localhost, 127.0.0.1, or Render/Vercel frontend domains
+    origin = origin.rstrip("/")
+
+    # Allow localhost, 127.0.0.1, or Render/Vercel/Netlify frontend domains
     allowed_patterns = [
         r"^http://localhost(:\d+)?$",
         r"^http://127\.0\.0\.1(:\d+)?$",
         r"^https://.*\.onrender\.com$",
         r"^https://.*\.vercel\.app$",
+        r"^https://.*\.netlify\.app$",
     ]
 
     frontend_url = os.getenv("FRONTEND_URL")

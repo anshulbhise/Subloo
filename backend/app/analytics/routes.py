@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from flask import Blueprint, jsonify
@@ -196,4 +196,103 @@ def get_renewals_calendar():
         "this_month": this_month,
         "future": future,
         "overdue": overdue,
+    }), 200
+
+
+# --------------------------------------------------
+# COMPREHENSIVE FINANCIAL REPORT ENDPOINT
+# --------------------------------------------------
+@analytics_bp.route("/report", methods=["GET"])
+@login_required
+def get_financial_report():
+    """
+    Generate an isolated, comprehensive subscription and spending report
+    for the authenticated user.
+    """
+    user_id = get_current_user_id()
+    today = date.today()
+
+    subscriptions = (
+        Subscription.query.filter_by(owner_user_id=user_id)
+        .order_by(Subscription.created_at.desc())
+        .all()
+    )
+
+    profile = UserProfile.query.filter_by(user_id=user_id).first()
+    preferred_currency = profile.currency if profile else "INR"
+    budget = float(profile.monthly_budget) if profile and profile.monthly_budget else None
+
+    active_count = 0
+    monthly_recurring = Decimal("0.00")
+    category_totals = defaultdict(lambda: Decimal("0.00"))
+    upcoming_renewals = []
+    sub_details = []
+
+    for sub in subscriptions:
+        monthly_cost = calculate_monthly_cost(sub.amount, sub.billing_interval)
+
+        if sub.status in {"active", "trial"}:
+            active_count += 1
+            monthly_recurring += monthly_cost
+            category_name = sub.category.name if sub.category else "Uncategorized"
+            category_totals[category_name] += monthly_cost
+
+        days_until = None
+        if sub.next_billing_date:
+            days_until = (sub.next_billing_date - today).days
+            if 0 <= days_until <= 30 and sub.status in {"active", "trial"}:
+                upcoming_renewals.append({
+                    "name": sub.custom_name or (sub.provider.name if sub.provider else "Subscription"),
+                    "amount": float(sub.amount),
+                    "currency": sub.currency,
+                    "monthly_cost": float(monthly_cost),
+                    "next_billing_date": sub.next_billing_date.isoformat(),
+                    "days_until": days_until,
+                    "status": sub.status,
+                })
+
+        sub_details.append({
+            "id": sub.id,
+            "name": sub.custom_name or (sub.provider.name if sub.provider else "Subscription"),
+            "provider": sub.provider.name if sub.provider else "",
+            "category": sub.category.name if sub.category else "Uncategorized",
+            "amount": float(sub.amount),
+            "currency": sub.currency,
+            "billing_interval": sub.billing_interval,
+            "monthly_cost": float(monthly_cost),
+            "status": sub.status,
+            "next_billing_date": sub.next_billing_date.isoformat() if sub.next_billing_date else None,
+            "days_until": days_until,
+            "auto_renew": sub.auto_renew,
+        })
+
+    upcoming_renewals.sort(key=lambda x: x["days_until"])
+    yearly_projected = monthly_recurring * Decimal("12")
+
+    cat_breakdown = []
+    for cat_name, cat_cost in sorted(category_totals.items(), key=lambda x: x[1], reverse=True):
+        pct = float((cat_cost / monthly_recurring * 100).quantize(Decimal("0.1"))) if monthly_recurring > 0 else 0
+        cat_breakdown.append({
+            "category_name": cat_name,
+            "monthly_cost": float(cat_cost),
+            "percentage": pct,
+        })
+
+    budget_pct = None
+    if budget and budget > 0:
+        budget_pct = round((float(monthly_recurring) / budget) * 100, 1)
+
+    return jsonify({
+        "status": "success",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "currency": preferred_currency,
+        "total_subscriptions": len(subscriptions),
+        "active_subscriptions": active_count,
+        "monthly_recurring_expenditure": float(monthly_recurring),
+        "yearly_projected_expenditure": float(yearly_projected),
+        "monthly_budget": budget,
+        "budget_percentage_utilized": budget_pct,
+        "category_breakdown": cat_breakdown,
+        "upcoming_renewals": upcoming_renewals,
+        "subscriptions": sub_details,
     }), 200

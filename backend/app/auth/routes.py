@@ -9,7 +9,8 @@ from werkzeug.security import (
 
 from app.database.extensions import db
 from app.users.models import User, UserProfile
-from app.common.auth import trusted_origin, login_required
+from app.common.auth import trusted_origin, login_required, rate_limit
+from app.notifications.service import create_notification
 
 
 auth_bp = Blueprint(
@@ -45,6 +46,7 @@ def user_response(user):
 # --------------------------------------------------
 
 @auth_bp.route("/register", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 def register():
 
     if not trusted_origin():
@@ -102,6 +104,18 @@ def register():
         db.session.add(user)
         db.session.commit()
 
+        # Send welcome notification
+        try:
+            create_notification(
+                user_id=user_id,
+                notif_type="system",
+                title="Welcome to Subloo!",
+                message="Welcome to Subloo! Start adding your recurring subscriptions to track renewal dates, monitor usage, and discover intelligent waste savings.",
+                data={"type": "welcome"}
+            )
+        except Exception:
+            pass
+
         user_data = user_response(user)
 
     except IntegrityError:
@@ -133,6 +147,7 @@ def register():
 # --------------------------------------------------
 
 @auth_bp.route("/login", methods=["POST"])
+@rate_limit(max_requests=10, window_seconds=60)
 def login():
 
     if not trusted_origin():
