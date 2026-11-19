@@ -48,6 +48,9 @@ def create_app():
             if raw_pass.startswith("[") and raw_pass.endswith("]"):
                 raw_pass = raw_pass[1:-1]
             encoded_pass = urllib.parse.quote(urllib.parse.unquote(raw_pass))
+            if "sslmode" not in rest and ("supabase" in host_port or "pooler" in host_port):
+                sep = "&" if "?" in rest else "?"
+                rest = f"{rest}{sep}sslmode=require"
             database_url = f"postgresql+psycopg2://{user}:{encoded_pass}@{host_port}{rest}"
         else:
             if database_url.startswith("postgres://"):
@@ -138,14 +141,14 @@ def create_app():
                 "message": "Subloo database connection successful!"
             }), 200
 
-        except Exception:
+        except Exception as e:
             app.logger.exception("Database connection failed")
             db.session.rollback()
 
             return jsonify({
                 "status": "error",
                 "connected": False,
-                "message": "Database connection failed."
+                "message": f"Database connection failed: {str(e)}"
             }), 503
 
     return app

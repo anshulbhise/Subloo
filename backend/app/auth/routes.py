@@ -68,25 +68,24 @@ def register():
             "error": "Password must contain at least 12 characters."
         }), 400
 
-    if User.query.filter_by(email=email).first():
-        return jsonify({
-            "error": "An account with this email already exists."
-        }), 409
-
-    user = User(
-        full_name=full_name,
-        email=email,
-        password_hash=generate_password_hash(password)
-    )
-
-    user.profile = UserProfile(
-        currency="INR",
-        timezone="Asia/Kolkata"
-    )
-
-    db.session.add(user)
-
     try:
+        if User.query.filter_by(email=email).first():
+            return jsonify({
+                "error": "An account with this email already exists."
+            }), 409
+
+        user = User(
+            full_name=full_name,
+            email=email,
+            password_hash=generate_password_hash(password)
+        )
+
+        user.profile = UserProfile(
+            currency="INR",
+            timezone="Asia/Kolkata"
+        )
+
+        db.session.add(user)
         db.session.commit()
 
     except IntegrityError:
@@ -95,6 +94,12 @@ def register():
         return jsonify({
             "error": "Unable to create account with these details."
         }), 409
+    except Exception as e:
+        db.session.rollback()
+
+        return jsonify({
+            "error": f"Database error: {str(e)}"
+        }), 500
 
     session.clear()
     session["user_id"] = user.id
@@ -129,7 +134,12 @@ def login():
             "error": "Email and password are required."
         }), 400
 
-    user = User.query.filter_by(email=email).first()
+    try:
+        user = User.query.filter_by(email=email).first()
+    except Exception as e:
+        return jsonify({
+            "error": f"Database error: {str(e)}"
+        }), 500
 
     if (
         not user
