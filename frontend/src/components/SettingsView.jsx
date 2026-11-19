@@ -101,6 +101,27 @@ function SettingsView({ user, onProfileUpdated }) {
     }
   };
 
+  // Handle OAuth redirect return params
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tabParam = params.get("tab");
+    const statusParam = params.get("status");
+    const emailParam = params.get("email");
+    const messageParam = params.get("message");
+
+    if (tabParam === "gmail") {
+      setActiveTab("gmail");
+      if (statusParam === "connected") {
+        setGmailMessage(`Google account connected successfully! (${emailParam || "Gmail"})`);
+        loadGmail();
+      } else if (statusParam === "error") {
+        setGmailMessage(messageParam || "Failed to connect Google account.");
+      }
+      // Clean query params from address bar without reloading
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeTab === "gmail") {
       loadGmail();
@@ -136,6 +157,40 @@ function SettingsView({ user, onProfileUpdated }) {
       setSaveError(err.message || "Failed to save settings.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Gmail connect OAuth handler
+  const handleConnectGmail = async () => {
+    try {
+      setGmailLoading(true);
+      setGmailMessage("");
+      const res = await api.getGmailAuthUrl();
+      if (res.auth_url) {
+        window.location.href = res.auth_url;
+      } else {
+        setGmailMessage(res.message || "OAuth is not configured.");
+      }
+    } catch (err) {
+      setGmailMessage(err.message || "Failed to initiate Gmail connection.");
+    } finally {
+      setGmailLoading(false);
+    }
+  };
+
+  // Gmail disconnect handler
+  const handleDisconnectGmail = async () => {
+    if (!window.confirm("Are you sure you want to disconnect your Gmail account?")) return;
+    try {
+      setGmailLoading(true);
+      setGmailMessage("");
+      await api.disconnectGmail();
+      setGmailMessage("Gmail account disconnected successfully.");
+      await loadGmail();
+    } catch (err) {
+      setGmailMessage(err.message || "Failed to disconnect Gmail.");
+    } finally {
+      setGmailLoading(false);
     }
   };
 
@@ -256,21 +311,19 @@ function SettingsView({ user, onProfileUpdated }) {
         <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] mt-6">
           <button
             onClick={() => setActiveTab("general")}
-            className={`pb-3 px-1 text-xs font-bold transition border-b-2 ${
-              activeTab === "general"
+            className={`pb-3 px-1 text-xs font-bold transition border-b-2 ${activeTab === "general"
                 ? "border-[var(--accent-primary)] text-[var(--accent-text)]"
                 : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            }`}
+              }`}
           >
             General & Budget
           </button>
           <button
             onClick={() => setActiveTab("gmail")}
-            className={`pb-3 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 ${
-              activeTab === "gmail"
+            className={`pb-3 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 ${activeTab === "gmail"
                 ? "border-[var(--accent-primary)] text-[var(--accent-text)]"
                 : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            }`}
+              }`}
           >
             <span>Gmail Integration</span>
             {gmailSuggestions.length > 0 && (
@@ -281,11 +334,10 @@ function SettingsView({ user, onProfileUpdated }) {
           </button>
           <button
             onClick={() => setActiveTab("organizations")}
-            className={`pb-3 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 ${
-              activeTab === "organizations"
+            className={`pb-3 px-3 text-xs font-bold transition border-b-2 flex items-center gap-1.5 ${activeTab === "organizations"
                 ? "border-[var(--accent-primary)] text-[var(--accent-text)]"
                 : "border-transparent text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-            }`}
+              }`}
           >
             <span>Organizations & Teams</span>
             {pendingInvites.length > 0 && (
@@ -358,11 +410,10 @@ function SettingsView({ user, onProfileUpdated }) {
                   type="button"
                   key={opt.id}
                   onClick={() => setTheme(opt.id)}
-                  className={`flex flex-col items-start p-4 rounded-xl border text-left transition ${
-                    theme === opt.id
+                  className={`flex flex-col items-start p-4 rounded-xl border text-left transition ${theme === opt.id
                       ? "border-[var(--accent-primary)] bg-[var(--accent-subtle)] text-[var(--accent-text)] ring-1 ring-[var(--accent-primary)] shadow-xs"
                       : "border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] hover:text-[var(--text-primary)]"
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center justify-between w-full mb-2">
                     {opt.icon}
@@ -433,11 +484,10 @@ function SettingsView({ user, onProfileUpdated }) {
                     type="button"
                     key={c.code}
                     onClick={() => setCurrency(c.code)}
-                    className={`px-3 py-2.5 rounded-xl border text-xs font-semibold transition ${
-                      currency === c.code
+                    className={`px-3 py-2.5 rounded-xl border text-xs font-semibold transition ${currency === c.code
                         ? "border-[var(--accent-primary)] bg-[var(--accent-subtle)] text-[var(--accent-text)]"
                         : "border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)]"
-                    }`}
+                      }`}
                   >
                     {c.label}
                   </button>
@@ -509,265 +559,288 @@ function SettingsView({ user, onProfileUpdated }) {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleSyncGmail}
-                  disabled={gmailLoading}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-4 py-2 text-xs font-semibold transition shadow-xs disabled:opacity-50"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span>{gmailLoading ? "Scanning..." : "Scan Receipts Now"}</span>
-                </button>
-              </div>
-            </div>
-
-            {gmailStatus?.setup_required && (
-              <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-[var(--text-secondary)]">
-                <p className="font-semibold text-amber-500 mb-1">OAuth Credentials Setup</p>
-                <p className="leading-relaxed">
-                  To connect live Google accounts, provide <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> in your Render environment variables. You can still test receipts scanning with the built-in detection pattern engine above!
-                </p>
-              </div>
-            )}
-          </div>
-
-          {/* Pending Suggestions */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                Detected Subscription Suggestions ({gmailSuggestions.length})
-              </h3>
-            </div>
-
-            {gmailSuggestions.length === 0 ? (
-              <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
-                <p className="text-xs font-semibold text-[var(--text-secondary)]">No pending suggestions</p>
-                <p className="text-[11px] text-[var(--text-muted)] mt-1">
-                  Click "Scan Receipts Now" to parse subscriptions from your billing emails.
-                </p>
-              </div>
-            ) : (
-              <div className="grid gap-3">
-                {gmailSuggestions.map((sug) => (
-                  <div
-                    key={sug.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 hover:border-[var(--border-strong)] transition"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-[var(--text-primary)]">
-                          {sug.detected_provider}
-                        </span>
-                        <span className="rounded-full bg-emerald-500/10 text-emerald-600 px-2 py-0.5 text-[10px] font-bold">
-                          {sug.detected_currency} {sug.detected_amount.toFixed(2)} / {sug.detected_billing_interval}
-                        </span>
-                      </div>
-                      <p className="text-xs text-[var(--text-secondary)] mt-1">
-                        {sug.email_subject}
-                      </p>
-                      <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
-                        Detected from {sug.email_sender} • Confidence: {Math.round(sug.confidence * 100)}%
-                      </p>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        onClick={() => handleApproveSuggestion(sug.id)}
-                        className="rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-3.5 py-1.5 text-xs font-semibold transition"
-                      >
-                        Approve & Add
-                      </button>
-                      <button
-                        onClick={() => handleRejectSuggestion(sug.id)}
-                        className="rounded-xl border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 px-3 py-1.5 text-xs font-semibold transition"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: ORGANIZATIONS & TEAMS */}
-      {activeTab === "organizations" && (
-        <div className="space-y-6">
-          {orgMessage && (
-            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] p-3.5 text-xs text-[var(--text-primary)]">
-              {orgMessage}
-            </div>
-          )}
-
-          {/* Pending Invitations */}
-          {pendingInvites.length > 0 && (
-            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-amber-500 mb-2">
-                Pending Invitations ({pendingInvites.length})
-              </h3>
-              <div className="space-y-2">
-                {pendingInvites.map((inv) => (
-                  <div
-                    key={inv.id}
-                    className="flex items-center justify-between rounded-xl bg-[var(--bg-surface)] p-3 text-xs border border-[var(--border-subtle)]"
-                  >
-                    <div>
-                      <p className="font-bold text-[var(--text-primary)]">{inv.organization_name}</p>
-                      <p className="text-[10px] text-[var(--text-muted)]">Invited as {inv.role}</p>
-                    </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {!gmailStatus?.is_connected ? (
                     <button
-                      onClick={() => handleAcceptInvite(inv.id)}
-                      className="rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-3 py-1 text-xs font-semibold"
+                      onClick={handleConnectGmail}
+                      disabled={gmailLoading}
+                      className="inline-flex items-center gap-2 rounded-xl bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-xs font-semibold transition shadow-xs disabled:opacity-50"
                     >
-                      Accept Invite
+                      <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                        <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.853 3.187-1.787 4.133-1.147 1.147-2.933 2.4-6.053 2.4-4.827 0-8.6-3.893-8.6-8.72s3.773-8.72 8.6-8.72c2.6 0 4.507 1.027 5.907 2.347l2.307-2.307C18.747 1.44 16.133 0 12.48 0 5.867 0 .307 5.387.307 12s5.56 12 12.173 12c3.573 0 6.267-1.173 8.373-3.36 2.16-2.16 2.84-5.213 2.84-7.667 0-.76-.053-1.467-.173-2.053H12.48z" />
+                      </svg>
+                      <span>{gmailLoading ? "Connecting..." : "Connect Google Account"}</span>
                     </button>
-                  </div>
-                ))}
+                  ) : (
+                    <>
+                      <button
+                        onClick={handleSyncGmail}
+                        disabled={gmailLoading}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-4 py-2 text-xs font-semibold transition shadow-xs disabled:opacity-50"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>{gmailLoading ? "Scanning..." : "Scan Receipts Now"}</span>
+                      </button>
+
+                      <button
+                        onClick={handleDisconnectGmail}
+                        disabled={gmailLoading}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/30 text-red-500 hover:bg-red-500/10 px-3.5 py-2 text-xs font-semibold transition disabled:opacity-50"
+                      >
+                        Disconnect
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
+
+              {gmailStatus?.setup_required && (
+                <div className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-[var(--text-secondary)]">
+                  <p className="font-semibold text-amber-500 mb-1">OAuth Credentials Setup</p>
+                  <p className="leading-relaxed">
+                    To connect live Google accounts, provide <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> in your Render environment variables. You can still test receipts scanning with the built-in detection pattern engine above!
+                  </p>
+                </div>
+              )}
             </div>
-          )}
 
-          {/* Existing Organizations */}
-          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-4">
-              Your Organizations ({organizations.length})
-            </h3>
+            {/* Pending Suggestions */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  Detected Subscription Suggestions ({gmailSuggestions.length})
+                </h3>
+              </div>
 
-            {organizations.length === 0 ? (
-              <p className="text-xs text-[var(--text-muted)]">
-                You are not currently part of any organizations. Create one below to manage team subscriptions with RBAC.
-              </p>
-            ) : (
-              <div className="grid gap-3">
-                {organizations.map((org) => (
-                  <div
-                    key={org.id}
-                    className="flex items-center justify-between rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] p-4"
-                  >
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-[var(--text-primary)]">{org.name}</span>
-                        <span className="rounded-full bg-[var(--accent-subtle)] text-[var(--accent-text)] px-2 py-0.5 text-[10px] font-bold uppercase">
-                          {org.role}
-                        </span>
+              {gmailSuggestions.length === 0 ? (
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-8 text-center">
+                  <p className="text-xs font-semibold text-[var(--text-secondary)]">No pending suggestions</p>
+                  <p className="text-[11px] text-[var(--text-muted)] mt-1">
+                    Click "Scan Receipts Now" to parse subscriptions from your billing emails.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {gmailSuggestions.map((sug) => (
+                    <div
+                      key={sug.id}
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 hover:border-[var(--border-strong)] transition"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-[var(--text-primary)]">
+                            {sug.detected_provider}
+                          </span>
+                          <span className="rounded-full bg-emerald-500/10 text-emerald-600 px-2 py-0.5 text-[10px] font-bold">
+                            {sug.detected_currency} {sug.detected_amount.toFixed(2)} / {sug.detected_billing_interval}
+                          </span>
+                        </div>
+                        <p className="text-xs text-[var(--text-secondary)] mt-1">
+                          {sug.email_subject}
+                        </p>
+                        <p className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                          Detected from {sug.email_sender} • Confidence: {Math.round(sug.confidence * 100)}%
+                        </p>
                       </div>
-                      <p className="text-xs text-[var(--text-muted)] mt-1">
-                        {org.member_count} member{org.member_count === 1 ? "" : "s"} • {org.team_count} team{org.team_count === 1 ? "" : "s"} • {org.subscription_count} subscription{org.subscription_count === 1 ? "" : "s"}
-                      </p>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => handleApproveSuggestion(sug.id)}
+                          className="rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-3.5 py-1.5 text-xs font-semibold transition"
+                        >
+                          Approve & Add
+                        </button>
+                        <button
+                          onClick={() => handleRejectSuggestion(sug.id)}
+                          className="rounded-xl border border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 px-3 py-1.5 text-xs font-semibold transition"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+      )}
+
+          {/* TAB 3: ORGANIZATIONS & TEAMS */}
+          {activeTab === "organizations" && (
+            <div className="space-y-6">
+              {orgMessage && (
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] p-3.5 text-xs text-[var(--text-primary)]">
+                  {orgMessage}
+                </div>
+              )}
+
+              {/* Pending Invitations */}
+              {pendingInvites.length > 0 && (
+                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-amber-500 mb-2">
+                    Pending Invitations ({pendingInvites.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {pendingInvites.map((inv) => (
+                      <div
+                        key={inv.id}
+                        className="flex items-center justify-between rounded-xl bg-[var(--bg-surface)] p-3 text-xs border border-[var(--border-subtle)]"
+                      >
+                        <div>
+                          <p className="font-bold text-[var(--text-primary)]">{inv.organization_name}</p>
+                          <p className="text-[10px] text-[var(--text-muted)]">Invited as {inv.role}</p>
+                        </div>
+                        <button
+                          onClick={() => handleAcceptInvite(inv.id)}
+                          className="rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-3 py-1 text-xs font-semibold"
+                        >
+                          Accept Invite
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Existing Organizations */}
+              <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-4">
+                  Your Organizations ({organizations.length})
+                </h3>
+
+                {organizations.length === 0 ? (
+                  <p className="text-xs text-[var(--text-muted)]">
+                    You are not currently part of any organizations. Create one below to manage team subscriptions with RBAC.
+                  </p>
+                ) : (
+                  <div className="grid gap-3">
+                    {organizations.map((org) => (
+                      <div
+                        key={org.id}
+                        className="flex items-center justify-between rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] p-4"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-[var(--text-primary)]">{org.name}</span>
+                            <span className="rounded-full bg-[var(--accent-subtle)] text-[var(--accent-text)] px-2 py-0.5 text-[10px] font-bold uppercase">
+                              {org.role}
+                            </span>
+                          </div>
+                          <p className="text-xs text-[var(--text-muted)] mt-1">
+                            {org.member_count} member{org.member_count === 1 ? "" : "s"} • {org.team_count} team{org.team_count === 1 ? "" : "s"} • {org.subscription_count} subscription{org.subscription_count === 1 ? "" : "s"}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Create New Organization */}
+              <form onSubmit={handleCreateOrg} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs space-y-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                  Create New Organization
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                      Organization Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newOrgName}
+                      onChange={(e) => setNewOrgName(e.target.value)}
+                      placeholder="e.g. Acme Corp"
+                      className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                      Legal / Company Name
+                    </label>
+                    <input
+                      type="text"
+                      value={newOrgLegal}
+                      onChange={(e) => setNewOrgLegal(e.target.value)}
+                      placeholder="e.g. Acme Corporation LLC"
+                      className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="submit"
+                  disabled={orgLoading || !newOrgName.trim()}
+                  className="rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-4 py-2 text-xs font-semibold disabled:opacity-50"
+                >
+                  Create Organization
+                </button>
+              </form>
+
+              {/* Invite Members */}
+              {organizations.length > 0 && (
+                <form onSubmit={handleInviteMember} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs space-y-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                    Invite Organization Member
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                        Organization
+                      </label>
+                      <select
+                        value={inviteOrgId}
+                        onChange={(e) => setInviteOrgId(e.target.value)}
+                        className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
+                      >
+                        {organizations.map((org) => (
+                          <option key={org.id} value={org.id}>{org.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                        User Email *
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={inviteEmail}
+                        onChange={(e) => setInviteEmail(e.target.value)}
+                        placeholder="teammate@company.com"
+                        className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
+                        Role (RBAC)
+                      </label>
+                      <select
+                        value={inviteRole}
+                        onChange={(e) => setInviteRole(e.target.value)}
+                        className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
+                      >
+                        <option value="member">Team Member</option>
+                        <option value="office_manager">Office Manager</option>
+                        <option value="admin">Admin</option>
+                      </select>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Create New Organization */}
-          <form onSubmit={handleCreateOrg} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-              Create New Organization
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
-                  Organization Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newOrgName}
-                  onChange={(e) => setNewOrgName(e.target.value)}
-                  placeholder="e.g. Acme Corp"
-                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
-                  Legal / Company Name
-                </label>
-                <input
-                  type="text"
-                  value={newOrgLegal}
-                  onChange={(e) => setNewOrgLegal(e.target.value)}
-                  placeholder="e.g. Acme Corporation LLC"
-                  className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
-                />
-              </div>
+                  <button
+                    type="submit"
+                    disabled={orgLoading || !inviteEmail.trim()}
+                    className="rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-4 py-2 text-xs font-semibold disabled:opacity-50"
+                  >
+                    Send Invitation
+                  </button>
+                </form>
+              )}
             </div>
-            <button
-              type="submit"
-              disabled={orgLoading || !newOrgName.trim()}
-              className="rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-4 py-2 text-xs font-semibold disabled:opacity-50"
-            >
-              Create Organization
-            </button>
-          </form>
-
-          {/* Invite Members */}
-          {organizations.length > 0 && (
-            <form onSubmit={handleInviteMember} className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                Invite Organization Member
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
-                    Organization
-                  </label>
-                  <select
-                    value={inviteOrgId}
-                    onChange={(e) => setInviteOrgId(e.target.value)}
-                    className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
-                  >
-                    {organizations.map((org) => (
-                      <option key={org.id} value={org.id}>{org.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
-                    User Email *
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="teammate@company.com"
-                    className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1">
-                    Role (RBAC)
-                  </label>
-                  <select
-                    value={inviteRole}
-                    onChange={(e) => setInviteRole(e.target.value)}
-                    className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3 py-2 text-xs text-[var(--text-primary)] outline-none"
-                  >
-                    <option value="member">Team Member</option>
-                    <option value="office_manager">Office Manager</option>
-                    <option value="admin">Admin</option>
-                  </select>
-                </div>
-              </div>
-              <button
-                type="submit"
-                disabled={orgLoading || !inviteEmail.trim()}
-                className="rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white px-4 py-2 text-xs font-semibold disabled:opacity-50"
-              >
-                Send Invitation
-              </button>
-            </form>
           )}
         </div>
-      )}
-    </div>
-  );
+      );
 }
 
-export default SettingsView;
+      export default SettingsView;

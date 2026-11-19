@@ -71,7 +71,13 @@ function App() {
   const { user, loading: authLoading, logout, checkAuth } = useAuth();
   const { theme, setTheme, resolvedTheme } = useTheme();
 
-  const [activePage, setActivePage] = useState("Overview");
+  const [activePage, setActivePage] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "gmail") return "Settings";
+    } catch (e) { }
+    return "Overview";
+  });
   const [subscriptions, setSubscriptions] = useState([]);
   const [summary, setSummary] = useState(null);
   const [dataLoading, setDataLoading] = useState(false);
@@ -214,11 +220,10 @@ function App() {
                 <button
                   key={item.name}
                   onClick={() => setActivePage(item.name)}
-                  className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition ${
-                    isActive
+                  className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition ${isActive
                       ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] border border-[var(--accent-border)] shadow-xs"
                       : "text-[var(--text-secondary)] hover:bg-[var(--bg-surface-secondary)] hover:text-[var(--text-primary)]"
-                  }`}
+                    }`}
                 >
                   <span className={isActive ? "text-[var(--accent-primary)]" : "text-[var(--text-muted)]"}>
                     {item.icon}
@@ -227,11 +232,10 @@ function App() {
 
                   {item.name === "Subscriptions" && subscriptions.length > 0 && (
                     <span
-                      className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                        isActive
+                      className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold ${isActive
                           ? "bg-[var(--accent-primary)] text-white"
                           : "bg-[var(--bg-surface-secondary)] text-[var(--text-muted)]"
-                      }`}
+                        }`}
                     >
                       {subscriptions.length}
                     </span>
@@ -455,11 +459,10 @@ function App() {
             <button
               key={item.name}
               onClick={() => setActivePage(item.name)}
-              className={`flex flex-col items-center justify-center p-1.5 rounded-lg transition min-w-[54px] ${
-                isActive
+              className={`flex flex-col items-center justify-center p-1.5 rounded-lg transition min-w-[54px] ${isActive
                   ? "text-[var(--accent-primary)] font-bold"
                   : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-              }`}
+                }`}
             >
               <span className="text-sm">{item.icon}</span>
               <span className="text-[10px] mt-0.5">{item.name}</span>
