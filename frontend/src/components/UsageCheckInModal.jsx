@@ -2,17 +2,17 @@ import { useState } from "react";
 import api from "../services/api";
 
 function UsageCheckInModal({ isOpen, onClose, onSaved, subscription }) {
-  if (!isOpen || !subscription) return null;
-
-  const [usageScore, setUsageScore] = useState(
-    subscription.usage_score !== null && subscription.usage_score !== undefined
-      ? subscription.usage_score
-      : 50
-  );
+  const [usageScore, setUsageScore] = useState(() =>
+      subscription?.usage_score !== null && subscription?.usage_score !== undefined
+        ? subscription.usage_score
+        : 50
+    );
   const [feedbackAction, setFeedbackAction] = useState("keep");
   const [notes, setNotes] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  if (!isOpen || !subscription) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -115,11 +115,10 @@ function UsageCheckInModal({ isOpen, onClose, onSaved, subscription }) {
                   key={act.id}
                   type="button"
                   onClick={() => setFeedbackAction(act.id)}
-                  className={`py-2 px-3 text-xs font-semibold rounded-xl border transition ${
-                    feedbackAction === act.id
+                  className={`py-2 px-3 text-xs font-semibold rounded-xl border transition ${feedbackAction === act.id
                       ? "border-[var(--accent-primary)] bg-[var(--accent-subtle)] text-[var(--accent-text)]"
                       : "border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)]"
-                  }`}
+                    }`}
                 >
                   {act.label}
                 </button>

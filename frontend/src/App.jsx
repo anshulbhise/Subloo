@@ -90,108 +90,131 @@ function App() {
       if (params.get("tab") === "gmail") return "Settings";
       const matched = matchPageFromParam(params.get("page"));
       if (matched) return matched;
-    } catch (e) { }
-    return "Overview";
-  });
+  } catch {
+    // ignore search param parsing failure
+  }
+  return "Overview";
+});
 
-  const handleNavigate = useCallback((page) => {
-    setActivePage(page);
-    try {
-      const url = new URL(window.location.href);
-      const slug = page.toLowerCase().replace(/\s+/g, "-");
-      if (page === "Overview") {
-        url.searchParams.delete("page");
-      } else {
-        url.searchParams.set("page", slug);
-      }
-      if (url.searchParams.get("tab") === "gmail" && page !== "Settings") {
-        url.searchParams.delete("tab");
-        url.searchParams.delete("status");
-        url.searchParams.delete("message");
-      }
-      window.history.pushState({ page }, "", url.toString());
-    } catch (e) { }
-  }, []);
-
-  // Listen to browser Back/Forward navigation
-  useEffect(() => {
-    const handlePopState = () => {
-      try {
-        const params = new URLSearchParams(window.location.search);
-        if (params.get("tab") === "gmail") {
-          setActivePage("Settings");
-          return;
-        }
-        const matched = matchPageFromParam(params.get("page"));
-        setActivePage(matched || "Overview");
-      } catch (e) { }
-    };
-
-    window.addEventListener("popstate", handlePopState);
-    return () => window.removeEventListener("popstate", handlePopState);
-  }, []);
-
-  const [subscriptions, setSubscriptions] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [dataLoading, setDataLoading] = useState(false);
-
-  // Modal states
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingSub, setEditingSub] = useState(null);
-  const [deletingSub, setDeletingSub] = useState(null);
-  const [deleteLoading, setDeleteLoading] = useState(false);
-  const [checkInSub, setCheckInSub] = useState(null);
-
-  // Refresh subscriptions & dashboard summary
-  const refreshData = useCallback(async () => {
-    if (!user) return;
-    setDataLoading(true);
-    try {
-      const [subsRes, summaryRes] = await Promise.all([
-        api.getSubscriptions(),
-        api.getAnalyticsSummary().catch(() => ({})),
-      ]);
-      setSubscriptions(subsRes.subscriptions || []);
-      setSummary(summaryRes || null);
-    } catch (err) {
-      console.error("Failed to fetch dashboard data:", err);
-    } finally {
-      setDataLoading(false);
+const handleNavigate = useCallback((page) => {
+  setActivePage(page);
+  try {
+    const url = new URL(window.location.href);
+    const slug = page.toLowerCase().replace(/\s+/g, "-");
+    if (page === "Overview") {
+      url.searchParams.delete("page");
+    } else {
+      url.searchParams.set("page", slug);
     }
+    if (url.searchParams.get("tab") === "gmail" && page !== "Settings") {
+      url.searchParams.delete("tab");
+      url.searchParams.delete("status");
+      url.searchParams.delete("message");
+    }
+    window.history.pushState({ page }, "", url.toString());
+} catch {
+  // ignore history push failure
+}
+  }, []);
+
+// Listen to browser Back/Forward navigation
+useEffect(() => {
+  const handlePopState = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tab") === "gmail") {
+        setActivePage("Settings");
+        return;
+      }
+      const matched = matchPageFromParam(params.get("page"));
+      setActivePage(matched || "Overview");
+  } catch {
+    // ignore history popstate parsing failure
+  }
+};
+
+window.addEventListener("popstate", handlePopState);
+return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+const [subscriptions, setSubscriptions] = useState([]);
+const [summary, setSummary] = useState(null);
+const [dataLoading, setDataLoading] = useState(false);
+
+// Modal states
+const [modalOpen, setModalOpen] = useState(false);
+const [editingSub, setEditingSub] = useState(null);
+const [deletingSub, setDeletingSub] = useState(null);
+const [deleteLoading, setDeleteLoading] = useState(false);
+const [checkInSub, setCheckInSub] = useState(null);
+
+// Refresh subscriptions & dashboard summary
+const refreshData = useCallback(async () => {
+  if (!user) return;
+  try {
+    setDataLoading(true);
+    const [subsRes, summaryRes] = await Promise.all([
+      api.getSubscriptions(),
+      api.getAnalyticsSummary().catch(() => ({})),
+    ]);
+    setSubscriptions(subsRes.subscriptions || []);
+    setSummary(summaryRes || null);
+  } catch (err) {
+    console.error("Failed to fetch dashboard data:", err);
+  } finally {
+    setDataLoading(false);
+  }
+}, [user]);
+
+useEffect(() => {
+  let ignore = false;
+  if (user) {
+    Promise.all([
+      api.getSubscriptions(),
+      api.getAnalyticsSummary().catch(() => ({})),
+    ])
+      .then(([subsRes, summaryRes]) => {
+        if (!ignore) {
+          setSubscriptions(subsRes?.subscriptions || []);
+          setSummary(summaryRes || null);
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch dashboard data:", err);
+      });
+  }
+
+return () => {
+  ignore = true;
+};
   }, [user]);
 
-  useEffect(() => {
-    if (user) {
-      refreshData();
-    }
-  }, [user, refreshData]);
+// Handlers
+const handleOpenAdd = () => {
+  setEditingSub(null);
+  setModalOpen(true);
+};
 
-  // Handlers
-  const handleOpenAdd = () => {
-    setEditingSub(null);
-    setModalOpen(true);
-  };
+const handleOpenEdit = (sub) => {
+  setEditingSub(sub);
+  setModalOpen(true);
+};
 
-  const handleOpenEdit = (sub) => {
-    setEditingSub(sub);
-    setModalOpen(true);
-  };
+const handleDeleteConfirm = async () => {
+  if (!deletingSub) return;
+  setDeleteLoading(true);
+  try {
+    await api.deleteSubscription(deletingSub.id);
+    setDeletingSub(null);
+    await refreshData();
+  } catch (err) {
+    alert(err.message || "Failed to delete subscription.");
+  } finally {
+    setDeleteLoading(false);
+  }
+};
 
-  const handleDeleteConfirm = async () => {
-    if (!deletingSub) return;
-    setDeleteLoading(true);
-    try {
-      await api.deleteSubscription(deletingSub.id);
-      setDeletingSub(null);
-      await refreshData();
-    } catch (err) {
-      alert(err.message || "Failed to delete subscription.");
-    } finally {
-      setDeleteLoading(false);
-    }
-  };
-
-  const handleProfileUpdated = (updatedUser) => {
+  const handleProfileUpdated = () => {
     if (checkAuth) checkAuth();
     refreshData();
   };
@@ -274,8 +297,8 @@ function App() {
                   key={item.name}
                   onClick={() => handleNavigate(item.name)}
                   className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition ${isActive
-                      ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] border border-[var(--accent-border)] shadow-xs"
-                      : "text-[var(--text-secondary)] hover:bg-[var(--bg-surface-secondary)] hover:text-[var(--text-primary)]"
+                    ? "bg-[var(--accent-subtle)] text-[var(--accent-text)] border border-[var(--accent-border)] shadow-xs"
+                    : "text-[var(--text-secondary)] hover:bg-[var(--bg-surface-secondary)] hover:text-[var(--text-primary)]"
                     }`}
                 >
                   <span className={isActive ? "text-[var(--accent-primary)]" : "text-[var(--text-muted)]"}>
@@ -286,8 +309,8 @@ function App() {
                   {item.name === "Subscriptions" && subscriptions.length > 0 && (
                     <span
                       className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold ${isActive
-                          ? "bg-[var(--accent-primary)] text-white"
-                          : "bg-[var(--bg-surface-secondary)] text-[var(--text-muted)]"
+                        ? "bg-[var(--accent-primary)] text-white"
+                        : "bg-[var(--bg-surface-secondary)] text-[var(--text-muted)]"
                         }`}
                     >
                       {subscriptions.length}
@@ -518,8 +541,8 @@ function App() {
               key={item.name}
               onClick={() => handleNavigate(item.name)}
               className={`flex flex-col items-center justify-center py-1 px-2 rounded-lg transition min-w-[52px] shrink-0 ${isActive
-                  ? "text-[var(--accent-primary)] font-bold bg-[var(--accent-subtle)]"
-                  : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                ? "text-[var(--accent-primary)] font-bold bg-[var(--accent-subtle)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                 }`}
             >
               <span className="text-sm">{item.icon}</span>
@@ -546,6 +569,7 @@ function App() {
       />
 
       <UsageCheckInModal
+        key={checkInSub?.id || "checkin-modal"}
         isOpen={Boolean(checkInSub)}
         subscription={checkInSub}
         onClose={() => setCheckInSub(null)}

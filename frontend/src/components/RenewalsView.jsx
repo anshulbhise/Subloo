@@ -30,9 +30,9 @@ function RenewalsView({ onAddClick, onEditClick }) {
   const [error, setError] = useState("");
 
   const fetchRenewals = async () => {
-    setLoading(true);
     setError("");
     try {
+      setLoading(true);
       const data = await api.getRenewals();
       setRenewalsData(data || {});
     } catch (err) {
@@ -43,7 +43,25 @@ function RenewalsView({ onAddClick, onEditClick }) {
   };
 
   useEffect(() => {
-    fetchRenewals();
+    let ignore = false;
+    api
+      .getRenewals()
+      .then((data) => {
+        if (!ignore) {
+          setRenewalsData(data || {});
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!ignore) {
+          setError(err.message || "Failed to load renewals calendar.");
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const overdue = renewalsData?.overdue || [];
@@ -56,7 +74,7 @@ function RenewalsView({ onAddClick, onEditClick }) {
 
   const totalTracked = Number(
     renewalsData?.total_renewals_tracked ??
-      (overdue.length + dueSoon.length + dueThisMonth.length + dueFuture.length)
+    (overdue.length + dueSoon.length + dueThisMonth.length + dueFuture.length)
   );
 
   const renderSection = (title, items, badgeClass, emptyMessage, isDanger = false) => (
@@ -82,13 +100,12 @@ function RenewalsView({ onAddClick, onEditClick }) {
             return (
               <div
                 key={sub.id || idx}
-                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border transition ${
-                  isPast
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border transition ${isPast
                     ? "border-red-500/40 bg-red-500/10"
                     : isUrgent
-                    ? "border-red-500/30 bg-red-500/5"
-                    : "border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] hover:border-[var(--accent-primary)]/40"
-                }`}
+                      ? "border-red-500/30 bg-red-500/5"
+                      : "border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] hover:border-[var(--accent-primary)]/40"
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--accent-subtle)] text-sm font-bold text-[var(--accent-primary)]">
@@ -116,25 +133,24 @@ function RenewalsView({ onAddClick, onEditClick }) {
                   </div>
 
                   <span
-                    className={`text-xs font-semibold px-3 py-1 rounded-full shrink-0 ${
-                      isPast
+                    className={`text-xs font-semibold px-3 py-1 rounded-full shrink-0 ${isPast
                         ? "bg-red-500/20 text-red-600 font-bold"
                         : daysUntil === 0
-                        ? "bg-red-500/20 text-red-600 font-bold animate-pulse"
-                        : daysUntil <= 3
-                        ? "bg-red-500/15 text-red-500 font-bold"
-                        : daysUntil <= 7
-                        ? "bg-amber-500/15 text-amber-500 font-semibold"
-                        : "bg-[var(--accent-subtle)] text-[var(--accent-text)]"
-                    }`}
+                          ? "bg-red-500/20 text-red-600 font-bold animate-pulse"
+                          : daysUntil <= 3
+                            ? "bg-red-500/15 text-red-500 font-bold"
+                            : daysUntil <= 7
+                              ? "bg-amber-500/15 text-amber-500 font-semibold"
+                              : "bg-[var(--accent-subtle)] text-[var(--accent-text)]"
+                      }`}
                   >
                     {isPast
                       ? `${Math.abs(daysUntil)} days overdue`
                       : daysUntil === 0
-                      ? "Renews Today!"
-                      : daysUntil === 1
-                      ? "Tomorrow"
-                      : `In ${daysUntil} days`}
+                        ? "Renews Today!"
+                        : daysUntil === 1
+                          ? "Tomorrow"
+                          : `In ${daysUntil} days`}
                   </span>
 
                   {onEditClick && (

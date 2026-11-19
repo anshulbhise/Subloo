@@ -16,9 +16,9 @@ function AIInsightsView({ onAddClick, onCheckInClick, onEditClick }) {
   const [error, setError] = useState("");
 
   const fetchInsights = async () => {
-    setLoading(true);
     setError("");
     try {
+      setLoading(true);
       const res = await api.getRecommendations();
       setData(res || {});
     } catch (err) {
@@ -29,7 +29,25 @@ function AIInsightsView({ onAddClick, onCheckInClick, onEditClick }) {
   };
 
   useEffect(() => {
-    fetchInsights();
+    let ignore = false;
+    api
+      .getRecommendations()
+      .then((res) => {
+        if (!ignore) {
+          setData(res || {});
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!ignore) {
+          setError(err.message || "Failed to load subscription insights.");
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   const getRiskBadge = (risk) => {
