@@ -1,72 +1,136 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import api from "../services/api";
 import FinancialReportModal from "./FinancialReportModal";
 
-function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
+const getCurrencySymbol = (c) => {
+  switch (String(c || "").toUpperCase()) {
+    case "USD":
+      return "$";
+    case "EUR":
+      return "€";
+    case "GBP":
+      return "£";
+    default:
+      return "₹";
+  }
+};
+
+const formatCurrency = (val, symbol = "₹") => {
+  const num = Number(val);
+  if (isNaN(num)) return `${symbol}0.00`;
+  return `${symbol}${num.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
+function AnalyticsView({ summary: initialSummary, subscriptions = [], loading: initialLoading, onAddClick }) {
   const [reportModalOpen, setReportModalOpen] = useState(false);
-  // Compute analytics derived from actual subscriptions
+  const [localSummary, setLocalSummary] = useState(initialSummary || null);
+  const [localLoading, setLocalLoading] = useState(false);
+
+  // Sync or fetch summary if not supplied by parent
+  useEffect(() => {
+    if (initialSummary) {
+      setLocalSummary(initialSummary);
+    } else if (!initialLoading) {
+      setLocalLoading(true);
+      api.getAnalyticsSummary()
+        .then((res) => {
+          if (res) setLocalSummary(res);
+        })
+        .catch(() => {})
+        .finally(() => setLocalLoading(false));
+    }
+  }, [initialSummary, initialLoading]);
+
+  // Compute analytics derived safely from actual subscriptions
   const stats = useMemo(() => {
-    if (!subscriptions || subscriptions.length === 0) {
+    const list = Array.isArray(subscriptions) ? subscriptions : [];
+    if (list.length === 0) {
       return {
         avgCost: 0,
         highestSub: null,
+        highestCost: 0,
         intervalBreakdown: {},
         activeCount: 0,
         totalMonthly: 0,
       };
     }
 
-    const activeSubs = subscriptions.filter(
+    const activeSubs = list.filter(
       (s) => s.status === "active" || s.status === "trial"
     );
 
     const totalMonthly = activeSubs.reduce(
-      (acc, s) => acc + (s.monthly_cost || 0),
+      (acc, s) => acc + Number(s.monthly_cost ?? s.amount ?? 0),
       0
     );
 
-    const avgCost =
-      activeSubs.length > 0 ? totalMonthly / activeSubs.length : 0;
+    const avgCost = activeSubs.length > 0 ? totalMonthly / activeSubs.length : 0;
 
     let highestSub = null;
+    let highestCost = 0;
     activeSubs.forEach((s) => {
-      if (!highestSub || s.monthly_cost > highestSub.monthly_cost) {
+      const cost = Number(s.monthly_cost ?? s.amount ?? 0);
+      if (!highestSub || cost > highestCost) {
         highestSub = s;
+        highestCost = cost;
       }
     });
 
     // Billing interval breakdown
     const intervalMap = {};
     activeSubs.forEach((s) => {
-      const key = s.billing_interval || "monthly";
+      const key = String(s.billing_interval || "monthly").toLowerCase();
       if (!intervalMap[key]) {
         intervalMap[key] = { count: 0, total: 0 };
       }
       intervalMap[key].count += 1;
-      intervalMap[key].total += s.monthly_cost || 0;
+      intervalMap[key].total += Number(s.monthly_cost ?? s.amount ?? 0);
     });
 
     return {
       avgCost,
       highestSub,
+      highestCost,
       intervalBreakdown: intervalMap,
       activeCount: activeSubs.length,
       totalMonthly,
     };
   }, [subscriptions]);
 
-  if (loading) {
+  const loading = initialLoading || localLoading;
+  const summary = localSummary || initialSummary;
+
+  if (loading && !summary && (!subscriptions || subscriptions.length === 0)) {
     return (
-      <div className="flex items-center justify-center py-24 bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-subtle)]">
-        <p className="text-sm font-semibold text-[var(--accent-text)]">
+      <div className="flex flex-col items-center justify-center py-24 bg-[var(--bg-surface)] rounded-2xl border border-[var(--border-subtle)] text-center px-4">
+        <div className="h-10 w-10 border-3 border-[var(--accent-primary)] border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-sm font-semibold text-[var(--text-primary)]">
           Aggregating financial spend analytics...
+        </p>
+        <p className="text-xs text-[var(--text-muted)] mt-1">
+          Calculating monthly burn distributions and category allocations.
         </p>
       </div>
     );
   }
 
-  const categoryBreakdown = summary?.category_breakdown || [];
+  const currencySymbol = getCurrencySymbol(summary?.currency);
+  const monthlyRecurring = Number(summary?.monthly_recurring_expenditure ?? stats.totalMonthly ?? 0);
+  const yearlyProjected = Number(summary?.yearly_estimated_expenditure ?? (monthlyRecurring * 12));
   const hasData = (summary?.total_subscriptions || subscriptions.length || 0) > 0;
-  const monthlyRecurring = summary?.monthly_recurring_expenditure || stats.totalMonthly || 0;
+
+  // Normalize category breakdown safely from backend
+  const categoryBreakdown = (summary?.category_breakdown || []).map((cat, idx) => {
+    const name = cat.category_name || cat.category || `Category ${idx + 1}`;
+    const monthlyCost = Number(cat.monthly_cost ?? cat.monthly_amount ?? 0);
+    const percentage = Number(
+      cat.percentage ?? (monthlyRecurring > 0 ? (monthlyCost / monthlyRecurring) * 100 : 0)
+    );
+    return { name, monthlyCost, percentage };
+  });
 
   return (
     <div className="space-y-8">
@@ -104,7 +168,7 @@ function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
             </svg>
-            Add Subscription
+            <span>Add Subscription</span>
           </button>
         </div>
       </div>
@@ -129,7 +193,7 @@ function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
             </svg>
-            Add Your First Subscription
+            <span>Add Your First Subscription</span>
           </button>
         </div>
       ) : (
@@ -141,10 +205,10 @@ function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
                 Monthly Recurring Burn
               </p>
               <p className="mt-2 text-2xl font-bold text-[var(--text-primary)]">
-                ₹{monthlyRecurring.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                {formatCurrency(monthlyRecurring, currencySymbol)}
               </p>
               <p className="text-xs text-[var(--accent-text)] mt-1">
-                {stats.activeCount} active subscriptions
+                {stats.activeCount || summary?.active_subscriptions || 0} active subscriptions
               </p>
             </div>
 
@@ -153,10 +217,7 @@ function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
                 Yearly Projected Cost
               </p>
               <p className="mt-2 text-2xl font-bold text-[var(--text-primary)]">
-                ₹{(summary?.yearly_estimated_expenditure || monthlyRecurring * 12).toLocaleString(
-                  undefined,
-                  { minimumFractionDigits: 2 }
-                )}
+                {formatCurrency(yearlyProjected, currencySymbol)}
               </p>
               <p className="text-xs text-[var(--text-muted)] mt-1">
                 Annual commitment
@@ -168,7 +229,7 @@ function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
                 Average Cost / Service
               </p>
               <p className="mt-2 text-2xl font-bold text-[var(--text-primary)]">
-                ₹{stats.avgCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                {formatCurrency(stats.avgCost, currencySymbol)}
               </p>
               <p className="text-xs text-[var(--text-muted)] mt-1">
                 Per active subscription
@@ -180,12 +241,10 @@ function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
                 Highest Single Cost
               </p>
               <p className="mt-2 text-2xl font-bold text-[var(--text-primary)] truncate">
-                {stats.highestSub ? stats.highestSub.name : "None"}
+                {stats.highestSub ? (stats.highestSub.name || stats.highestSub.custom_name || "Subscription") : "None"}
               </p>
               <p className="text-xs text-[var(--text-muted)] mt-1">
-                {stats.highestSub
-                  ? `₹${stats.highestSub.monthly_cost.toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo`
-                  : "No data"}
+                {stats.highestSub ? `${formatCurrency(stats.highestCost, currencySymbol)} / mo` : "No data"}
               </p>
             </div>
           </div>
@@ -210,18 +269,16 @@ function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
               ) : (
                 <div className="space-y-4">
                   {categoryBreakdown.map((cat, idx) => {
-                    const pct = monthlyRecurring > 0
-                      ? Math.min((cat.monthly_cost / monthlyRecurring) * 100, 100)
-                      : 0;
+                    const pct = Math.max(0, Math.min(100, cat.percentage));
                     return (
-                      <div key={cat.category_name || idx}>
+                      <div key={cat.name || idx}>
                         <div className="flex items-center justify-between text-xs mb-1.5">
                           <span className="font-semibold text-[var(--text-primary)]">
-                            {cat.category_name}
+                            {cat.name}
                           </span>
                           <div className="text-right">
                             <span className="font-bold text-[var(--text-primary)]">
-                              ₹{cat.monthly_cost.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              {formatCurrency(cat.monthlyCost, currencySymbol)}
                             </span>
                             <span className="text-[var(--text-muted)] ml-1.5">
                               ({pct.toFixed(0)}%)
@@ -281,7 +338,7 @@ function AnalyticsView({ summary, subscriptions = [], loading, onAddClick }) {
 
                       <div className="text-right">
                         <p className="text-sm font-bold text-[var(--text-primary)]">
-                          ₹{data.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          {formatCurrency(data.total, currencySymbol)}
                         </p>
                         <p className="text-[10px] text-[var(--text-muted)]">
                           monthly equivalent

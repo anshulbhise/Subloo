@@ -14,6 +14,7 @@ import SubscriptionModal from "./components/SubscriptionModal";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
 import UsageCheckInModal from "./components/UsageCheckInModal";
 import NotificationCenter from "./components/NotificationCenter";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 const navigationItems = [
   {
@@ -445,58 +446,60 @@ function App() {
 
         {/* View Content */}
         <div className="mx-auto max-w-7xl p-4 sm:p-6 md:p-8">
-          {activePage === "Overview" && (
-            <OverviewView
-              summary={summary}
-              subscriptions={subscriptions}
-              loading={dataLoading}
-              onAddClick={handleOpenAdd}
-              onNavigate={handleNavigate}
-              user={user}
-            />
-          )}
+          <ErrorBoundary key={activePage} onNavigateOverview={() => handleNavigate("Overview")}>
+            {activePage === "Overview" && (
+              <OverviewView
+                summary={summary}
+                subscriptions={subscriptions}
+                loading={dataLoading}
+                onAddClick={handleOpenAdd}
+                onNavigate={handleNavigate}
+                user={user}
+              />
+            )}
 
-          {activePage === "Subscriptions" && (
-            <SubscriptionsView
-              subscriptions={subscriptions}
-              loading={dataLoading}
-              onAddClick={handleOpenAdd}
-              onEditClick={handleOpenEdit}
-              onDeleteClick={(sub) => setDeletingSub(sub)}
-              onCheckInClick={(sub) => setCheckInSub(sub)}
-            />
-          )}
+            {activePage === "Subscriptions" && (
+              <SubscriptionsView
+                subscriptions={subscriptions}
+                loading={dataLoading}
+                onAddClick={handleOpenAdd}
+                onEditClick={handleOpenEdit}
+                onDeleteClick={(sub) => setDeletingSub(sub)}
+                onCheckInClick={(sub) => setCheckInSub(sub)}
+              />
+            )}
 
-          {activePage === "Renewals" && (
-            <RenewalsView
-              onAddClick={handleOpenAdd}
-              onEditClick={handleOpenEdit}
-            />
-          )}
+            {activePage === "Renewals" && (
+              <RenewalsView
+                onAddClick={handleOpenAdd}
+                onEditClick={handleOpenEdit}
+              />
+            )}
 
-          {activePage === "Analytics" && (
-            <AnalyticsView
-              summary={summary}
-              subscriptions={subscriptions}
-              loading={dataLoading}
-              onAddClick={handleOpenAdd}
-            />
-          )}
+            {activePage === "Analytics" && (
+              <AnalyticsView
+                summary={summary}
+                subscriptions={subscriptions}
+                loading={dataLoading}
+                onAddClick={handleOpenAdd}
+              />
+            )}
 
-          {activePage === "AI Insights" && (
-            <AIInsightsView
-              onAddClick={handleOpenAdd}
-              onCheckInClick={(sub) => setCheckInSub(sub)}
-              onEditClick={handleOpenEdit}
-            />
-          )}
+            {activePage === "AI Insights" && (
+              <AIInsightsView
+                onAddClick={handleOpenAdd}
+                onCheckInClick={(sub) => setCheckInSub(sub)}
+                onEditClick={handleOpenEdit}
+              />
+            )}
 
-          {activePage === "Settings" && (
-            <SettingsView
-              user={user}
-              onProfileUpdated={handleProfileUpdated}
-            />
-          )}
+            {activePage === "Settings" && (
+              <SettingsView
+                user={user}
+                onProfileUpdated={handleProfileUpdated}
+              />
+            )}
+          </ErrorBoundary>
 
           {/* Footer */}
           <footer className="mt-12 flex flex-wrap items-center justify-between gap-3 text-xs text-[var(--text-muted)] border-t border-[var(--border-subtle)] pt-6">
