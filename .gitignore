@@ -1,0 +1,17 @@
+# Node dependencies & builds
+node_modules/
+dist/
+
+# Python virtual environment & cache
+__pycache__/
+*.py[cod]
+.venv/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs & temp
+*.log
+.DS_Store

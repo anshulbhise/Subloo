@@ -8,18 +8,27 @@ from app.users.models import User
 
 def trusted_origin():
     """
-    Allow requests from local frontend development servers or without an Origin header.
+    Allow requests from local frontend development servers, trusted production domains,
+    or requests without an Origin header.
     """
     origin = request.headers.get("Origin")
 
     if origin is None:
         return True
 
-    # Allow localhost or 127.0.0.1 on standard Vite/frontend development ports
+    # Allow localhost, 127.0.0.1, or Render frontend domains
     allowed_patterns = [
         r"^http://localhost(:\d+)?$",
         r"^http://127\.0\.0\.1(:\d+)?$",
+        r"^https://.*\.onrender\.com$",
     ]
+
+    frontend_url = os.getenv("FRONTEND_URL")
+    if frontend_url:
+        for u in frontend_url.split(","):
+            u = u.strip().rstrip("/")
+            if u:
+                allowed_patterns.append(f"^{re.escape(u)}$")
 
     return any(re.match(pattern, origin) for pattern in allowed_patterns)
 

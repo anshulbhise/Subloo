@@ -23,21 +23,33 @@ def create_app():
     app = Flask(__name__)
 
     # Application configuration
-    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY")
+    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "subloo-dev-secret-key")
 
+    is_production = os.getenv("FLASK_ENV") == "production" or os.getenv("RENDER") is not None
     app.config["SESSION_COOKIE_HTTPONLY"] = True
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    app.config["SESSION_COOKIE_SECURE"] = False
+    app.config["SESSION_COOKIE_SAMESITE"] = "None" if is_production else "Lax"
+    app.config["SESSION_COOKIE_SECURE"] = is_production
     app.config["PERMANENT_SESSION_LIFETIME"] = 86400
     
-    app.config["SQLALCHEMY_DATABASE_URI"] = URL.create(
-        drivername="mysql+pymysql",
-        username=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        host=os.getenv("DB_HOST", "127.0.0.1"),
-        port=int(os.getenv("DB_PORT", "3306")),
-        database=os.getenv("DB_NAME", "subloo_db"),
-    )
+    # Support direct Supabase / PostgreSQL URI or fallback to discrete MySQL variables
+    database_url = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
+    if database_url:
+        # Supabase provides postgres:// or postgresql://
+        # SQLAlchemy requires postgresql+psycopg2://
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+        elif database_url.startswith("postgresql://") and not database_url.startswith("postgresql+"):
+            database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    else:
+        app.config["SQLALCHEMY_DATABASE_URI"] = URL.create(
+            drivername=os.getenv("DB_DRIVER", "mysql+pymysql"),
+            username=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            host=os.getenv("DB_HOST", "127.0.0.1"),
+            port=int(os.getenv("DB_PORT") or (5432 if "postgres" in os.getenv("DB_DRIVER", "") else 3306)),
+            database=os.getenv("DB_NAME", "subloo_db"),
+        )
 
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
@@ -52,6 +64,12 @@ def create_app():
     from app.subscriptions import models as subscription_models
     from app.teams import models as team_models
 
+    with app.app_context():
+        try:
+            db.create_all()
+        except Exception as e:
+            app.logger.warning(f"Could not auto-create tables: {e}")
+
     # Initialize database migrations
     Migrate(app, db)
 
@@ -62,18 +80,26 @@ def create_app():
     app.register_blueprint(intelligence_bp)
 
     # Frontend connection
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+    frontend_url = os.getenv("FRONTEND_URL")
+    if frontend_url:
+        for u in frontend_url.split(","):
+            cleaned = u.strip().rstrip("/")
+            if cleaned and cleaned not in allowed_origins:
+                allowed_origins.append(cleaned)
+
     CORS(
         app,
         resources={
             r"/api/*": {
-                "origins": [
-                    "http://localhost:5173",
-                    "http://127.0.0.1:5173",
-                    "http://localhost:5174",
-                    "http://127.0.0.1:5174",
-                    "http://localhost:3000",
-                    "http://127.0.0.1:3000",
-                ]
+                "origins": allowed_origins
             }
         },
         supports_credentials=True
