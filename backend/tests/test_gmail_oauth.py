@@ -16,7 +16,13 @@ from app import create_app
 from app.database.extensions import db
 from app.users.models import User
 from app.gmail.models import GmailConnection, GmailDetectedSubscription
-from app.gmail.security import decrypt_credentials, encrypt_credentials, refresh_google_access_token
+from app.gmail.security import (
+    decrypt_credentials,
+    encrypt_credentials,
+    generate_oauth_state,
+    refresh_google_access_token,
+    verify_oauth_state,
+)
 from app.notifications.models import Notification
 from app.common.auth import _request_records
 
@@ -30,7 +36,7 @@ class GmailOAuthTests(unittest.TestCase):
         os.environ["GOOGLE_CLIENT_ID"] = "mock-google-client-id.apps.googleusercontent.com"
         os.environ["GOOGLE_CLIENT_SECRET"] = "mock-google-client-secret"
         os.environ["GOOGLE_REDIRECT_URI"] = "https://subloo-backend.onrender.com/api/gmail/oauth/callback"
-        os.environ["FRONTEND_URL"] = "https://subloo.onrender.com"
+        os.environ["FRONTEND_URL"] = "https://subloo-frontend.onrender.com"
         os.environ["FLASK_ENV"] = "testing"
 
         cls.app = create_app()
@@ -77,22 +83,21 @@ class GmailOAuthTests(unittest.TestCase):
         self.assertEqual(res.status_code, 401)
 
     def test_02_auth_url_generation_success(self):
-        """Logged-in user generates Google authorization URL with CSRF state stored in session."""
+        """Logged-in user generates Google authorization URL with CSRF state encoding user_id and origin."""
         user = self._create_and_login_user("oauth_user1@example.com")
-        res = self.client.get("/api/gmail/auth-url")
+        res = self.client.get("/api/gmail/auth-url?origin=https://subloo-frontend.onrender.com")
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
         self.assertEqual(data["status"], "success")
         self.assertIn("auth_url", data)
         self.assertIn("state", data)
         self.assertIn("accounts.google.com", data["auth_url"])
-        self.assertIn(data["state"], data["auth_url"])
+        self.assertIn(urllib.parse.quote(data["state"]), data["auth_url"])
 
-        # Check session state binding
-        with self.client.session_transaction() as sess:
-            self.assertEqual(sess.get("gmail_oauth_state"), data["state"])
-            self.assertEqual(sess.get("gmail_oauth_user_id"), user.id)
-            self.assertIsNotNone(sess.get("gmail_oauth_state_time"))
+        # Verify state decrypts and contains user_id and origin
+        verified_uid, verified_origin = verify_oauth_state(data["state"])
+        self.assertEqual(verified_uid, str(user.id))
+        self.assertEqual(verified_origin, "https://subloo-frontend.onrender.com")
 
     def test_03_auth_url_when_unconfigured(self):
         """Returns helpful unconfigured status when GOOGLE_CLIENT_ID is not set."""
@@ -108,44 +113,32 @@ class GmailOAuthTests(unittest.TestCase):
     # 2. Callback Security & Error Handling
     # -------------------------------------------------------------------------
     def test_04_callback_google_error(self):
-        """When user cancels on Google consent screen, redirect with error and clear state."""
+        """When user cancels on Google consent screen, redirect to frontend with error."""
         user = self._create_and_login_user("oauth_user2@example.com")
+        state = generate_oauth_state(user.id, "https://subloo-frontend.onrender.com")
 
-        with self.client.session_transaction() as sess:
-            sess["gmail_oauth_state"] = "sample_state_token"
-            sess["gmail_oauth_state_time"] = time.time()
-            sess["gmail_oauth_user_id"] = user.id
-
-        res = self.client.get("/api/gmail/oauth/callback?error=access_denied&error_description=User+cancelled")
+        res = self.client.get(f"/api/gmail/oauth/callback?error=access_denied&error_description=User+cancelled&state={state}")
         self.assertEqual(res.status_code, 302)
         location = urllib.parse.unquote(res.location)
+        self.assertIn("https://subloo-frontend.onrender.com", location)
         self.assertIn("status=error", location)
         self.assertIn("cancelled or denied", location)
 
-        # Ensure session state was cleared
-        with self.client.session_transaction() as sess:
-            self.assertNotIn("gmail_oauth_state", sess)
-
     def test_05_callback_missing_code(self):
         """Callback without code returns error redirect."""
-        self._create_and_login_user("oauth_user2@example.com")
-        res = self.client.get("/api/gmail/oauth/callback?state=xyz")
+        user = self._create_and_login_user("oauth_user2@example.com")
+        state = generate_oauth_state(user.id, "https://subloo-frontend.onrender.com")
+        res = self.client.get(f"/api/gmail/oauth/callback?state={state}")
         self.assertEqual(res.status_code, 302)
         location = urllib.parse.unquote(res.location)
         self.assertIn("status=error", location)
         self.assertIn("Missing authorization code", location)
 
     def test_06_callback_invalid_or_missing_state(self):
-        """Callback with state mismatch or missing session state prevents CSRF."""
-        user = self._create_and_login_user("oauth_user2@example.com")
+        """Callback with tampered or invalid state prevents CSRF."""
+        self._create_and_login_user("oauth_user2@example.com")
 
-        with self.client.session_transaction() as sess:
-            sess["gmail_oauth_state"] = "valid_state_123"
-            sess["gmail_oauth_state_time"] = time.time()
-            sess["gmail_oauth_user_id"] = user.id
-
-        # Mismatched state passed from external redirect
-        res = self.client.get("/api/gmail/oauth/callback?code=mock_code&state=attacker_state")
+        res = self.client.get("/api/gmail/oauth/callback?code=mock_code&state=attacker_fake_token_123")
         self.assertEqual(res.status_code, 302)
         location = urllib.parse.unquote(res.location)
         self.assertIn("status=error", location)
@@ -155,16 +148,20 @@ class GmailOAuthTests(unittest.TestCase):
         """Callback with state older than 10 minutes is rejected."""
         user = self._create_and_login_user("oauth_user2@example.com")
 
-        with self.client.session_transaction() as sess:
-            sess["gmail_oauth_state"] = "valid_state_123"
-            sess["gmail_oauth_state_time"] = time.time() - 700  # 11 minutes ago
-            sess["gmail_oauth_user_id"] = user.id
+        # Manually create payload with ts 15 minutes ago
+        expired_payload = {
+            "uid": str(user.id),
+            "ts": time.time() - 900,
+            "origin": "https://subloo-frontend.onrender.com",
+            "nonce": "old_nonce_123",
+        }
+        expired_state = encrypt_credentials(json.dumps(expired_payload))
 
-        res = self.client.get("/api/gmail/oauth/callback?code=mock_code&state=valid_state_123")
+        res = self.client.get(f"/api/gmail/oauth/callback?code=mock_code&state={expired_state}")
         self.assertEqual(res.status_code, 302)
         location = urllib.parse.unquote(res.location)
         self.assertIn("status=error", location)
-        self.assertIn("expired", location)
+        self.assertIn("Invalid or missing OAuth security state", location)
 
     # -------------------------------------------------------------------------
     # 3. Successful Token Exchange, Storage, and Identity Retrieval
@@ -174,12 +171,7 @@ class GmailOAuthTests(unittest.TestCase):
     def test_08_successful_token_exchange_and_connection_creation(self, mock_post, mock_get):
         """Mock successful code exchange and profile retrieval; verify encrypted storage and notification."""
         user = self._create_and_login_user("oauth_success_user@example.com")
-
-        state = "secure_state_random_token_xyz"
-        with self.client.session_transaction() as sess:
-            sess["gmail_oauth_state"] = state
-            sess["gmail_oauth_state_time"] = time.time()
-            sess["gmail_oauth_user_id"] = user.id
+        state = generate_oauth_state(user.id, "https://subloo-frontend.onrender.com")
 
         # Mock Google Token endpoint response
         mock_token_resp = MagicMock()
@@ -208,6 +200,7 @@ class GmailOAuthTests(unittest.TestCase):
         # Check redirect
         self.assertEqual(res.status_code, 302)
         location = urllib.parse.unquote(res.location)
+        self.assertIn("https://subloo-frontend.onrender.com", location)
         self.assertIn("status=connected", location)
         self.assertIn("email=user.connected@gmail.com", location)
 
@@ -260,11 +253,7 @@ class GmailOAuthTests(unittest.TestCase):
         db.session.commit()
 
         # Reconnection flow: Google sends ONLY new access_token, NO refresh_token
-        state = "state_token_for_reauth"
-        with self.client.session_transaction() as sess:
-            sess["gmail_oauth_state"] = state
-            sess["gmail_oauth_state_time"] = time.time()
-            sess["gmail_oauth_user_id"] = user.id
+        state = generate_oauth_state(user.id, "https://subloo-frontend.onrender.com")
 
         mock_token_resp = MagicMock()
         mock_token_resp.status_code = 200
@@ -272,7 +261,6 @@ class GmailOAuthTests(unittest.TestCase):
             "access_token": "ya29.brand_new_access_token",
             "expires_in": 3600,
             "token_type": "Bearer"
-            # note: no refresh_token here
         }
         mock_post.return_value = mock_token_resp
 
@@ -379,6 +367,61 @@ class GmailOAuthTests(unittest.TestCase):
         self.assertEqual(creds["access_token"], "freshly_refreshed_access_token")
         self.assertEqual(creds["refresh_token"], "valid_refresh_token_xyz")
         self.assertGreater(updated_conn.token_expiry, datetime.now(timezone.utc).replace(tzinfo=None))
+
+    # -------------------------------------------------------------------------
+    # 7. Immunity from Cross-Site Cookie Blocking (Brave Shields / Safari ITP)
+    # -------------------------------------------------------------------------
+    @patch("requests.get")
+    @patch("requests.post")
+    def test_12_callback_succeeds_without_session_cookie(self, mock_post, mock_get):
+        """When browser strips session cookie on cross-site redirect, cryptographic state token preserves authentication."""
+        user = self._create_and_login_user("oauth_brave_shield_user@example.com")
+        state = generate_oauth_state(user.id, "https://subloo-frontend.onrender.com")
+
+        # SIMULATE BRAVE SHIELDS / CROSS-ORIGIN COOKIE STRIPPING:
+        with self.client.session_transaction() as sess:
+            sess.clear()
+
+        # Mock responses
+        mock_token_resp = MagicMock()
+        mock_token_resp.status_code = 200
+        mock_token_resp.json.return_value = {
+            "access_token": "ya29.brave_access_token",
+            "expires_in": 3600,
+            "token_type": "Bearer"
+        }
+        mock_post.return_value = mock_token_resp
+
+        mock_userinfo_resp = MagicMock()
+        mock_userinfo_resp.status_code = 200
+        mock_userinfo_resp.json.return_value = {"email": "brave.user@gmail.com"}
+        mock_get.return_value = mock_userinfo_resp
+
+        # Callback must succeed despite session cookie being absent
+        res = self.client.get(f"/api/gmail/oauth/callback?code=mock_code&state={state}")
+        self.assertEqual(res.status_code, 302)
+        location = urllib.parse.unquote(res.location)
+        self.assertIn("status=connected", location)
+        self.assertIn("email=brave.user@gmail.com", location)
+
+        # Verify GmailConnection was saved to the correct user
+        conn = GmailConnection.query.filter_by(user_id=user.id).first()
+        self.assertIsNotNone(conn)
+        self.assertEqual(conn.gmail_address, "brave.user@gmail.com")
+
+    def test_13_replay_attack_prevention(self):
+        """Re-using the same state token is rejected as replay."""
+        user = self._create_and_login_user("oauth_replay_user@example.com")
+        state = generate_oauth_state(user.id, "https://subloo-frontend.onrender.com")
+
+        # First verification succeeds
+        uid, origin = verify_oauth_state(state)
+        self.assertEqual(uid, str(user.id))
+
+        # Second verification with exact same state token must fail (replay blocked)
+        uid_second, origin_second = verify_oauth_state(state)
+        self.assertIsNone(uid_second)
+        self.assertIsNone(origin_second)
 
 
 if __name__ == "__main__":

@@ -13,7 +13,13 @@ from flask import Blueprint, current_app, jsonify, redirect, request, session
 from app.common.auth import get_current_user_id, login_required, trusted_origin
 from app.database.extensions import db
 from app.gmail.models import GmailConnection, GmailDetectedSubscription
-from app.gmail.security import decrypt_credentials, encrypt_credentials, refresh_google_access_token
+from app.gmail.security import (
+    decrypt_credentials,
+    encrypt_credentials,
+    generate_oauth_state,
+    refresh_google_access_token,
+    verify_oauth_state,
+)
 from app.subscriptions.models import Subscription, SubscriptionCategory
 from app.preprocessing.service import normalize_amount, normalize_text
 
@@ -22,15 +28,61 @@ def utc_now():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def get_frontend_url():
-    """Resolve the base URL of the client frontend for OAuth redirection."""
+def is_safe_redirect_url(url_str):
+    """Verify that a redirection destination belongs to an authorized frontend origin."""
+    if not url_str:
+        return False
+    try:
+        parsed = urllib.parse.urlparse(url_str)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = (parsed.hostname or "").lower()
+        if hostname in ("localhost", "127.0.0.1"):
+            return True
+        if hostname.endswith(".onrender.com") or hostname == "onrender.com":
+            return True
+        env_allowed = os.getenv("ALLOWED_ORIGINS", "") or os.getenv("FRONTEND_URL", "")
+        for u in env_allowed.split(","):
+            u = u.strip()
+            if u:
+                u_parsed = urllib.parse.urlparse(u)
+                if u_parsed.netloc and u_parsed.netloc.lower() == parsed.netloc.lower():
+                    return True
+    except Exception:
+        return False
+    return False
+
+
+def get_frontend_url(preferred_url=None):
+    """
+    Resolve the base URL of the client frontend for OAuth redirection.
+    Prioritizes:
+    1. Validated preferred_url (from cryptographically signed OAuth state).
+    2. FRONTEND_URL environment variable.
+    3. Referer header if safe.
+    4. Render frontend default.
+    5. Localhost development fallback.
+    """
+    if preferred_url and is_safe_redirect_url(preferred_url):
+        return preferred_url.rstrip("/")
+
     frontend_url = os.getenv("FRONTEND_URL")
     if frontend_url:
-        u = frontend_url.split(",")[0].strip().rstrip("/")
-        if u:
-            return u
+        for u in frontend_url.split(","):
+            u = u.strip().rstrip("/")
+            if u and is_safe_redirect_url(u):
+                return u
+
+    try:
+        referer = request.headers.get("Referer")
+        if referer and is_safe_redirect_url(referer):
+            parsed = urllib.parse.urlparse(referer)
+            return f"{parsed.scheme}://{parsed.netloc}"
+    except Exception:
+        pass
+
     if os.getenv("RENDER"):
-        return "https://subloo.onrender.com"
+        return "https://subloo-frontend.onrender.com"
     return "http://localhost:5173"
 
 
@@ -142,13 +194,27 @@ def get_auth_url():
             "instructions": "Set GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and TOKEN_ENCRYPTION_KEY in your Render environment variables."
         }), 200
 
-    # Cryptographically secure CSRF state token bound to user session
-    state = secrets.token_urlsafe(32)
-    session["gmail_oauth_state"] = state
-    session["gmail_oauth_state_time"] = time.time()
-    session["gmail_oauth_user_id"] = user_id
-    session.permanent = True
-    session.modified = True
+    # Determine initiating frontend origin
+    req_origin = request.args.get("origin") or request.headers.get("Origin") or request.headers.get("Referer")
+    resolved_frontend = None
+    if req_origin and is_safe_redirect_url(req_origin):
+        parsed = urllib.parse.urlparse(req_origin)
+        resolved_frontend = f"{parsed.scheme}://{parsed.netloc}"
+    else:
+        resolved_frontend = get_frontend_url()
+
+    # Generate cryptographically signed, tamper-proof state token encoding user_id & frontend origin
+    state = generate_oauth_state(user_id=user_id, frontend_url=resolved_frontend)
+
+    # Store in session as secondary layer
+    try:
+        session["gmail_oauth_state"] = state
+        session["gmail_oauth_state_time"] = time.time()
+        session["gmail_oauth_user_id"] = user_id
+        session.permanent = True
+        session.modified = True
+    except Exception:
+        pass
 
     scopes = "https://www.googleapis.com/auth/gmail.readonly email profile"
     params = {
@@ -180,48 +246,48 @@ def oauth_callback():
     retrieves connected user identity, encrypts credentials,
     and updates GmailConnection.
     """
-    frontend_url = get_frontend_url()
-
-    # 1. Handle error returned by Google (e.g. user cancelled or denied consent)
+    # 1. Read code and state first so we can extract target frontend even on error
+    received_state = request.args.get("state")
+    code = request.args.get("code")
     google_error = request.args.get("error")
+
+    # Verify state cryptographically (decoupled from cross-site cookie restrictions)
+    state_user_id, state_frontend_url = verify_oauth_state(received_state) if received_state else (None, None)
+
+    # Fallback to session check if available
+    session_user_id = session.pop("gmail_oauth_user_id", None)
+    session_state = session.pop("gmail_oauth_state", None)
+    session_time = session.pop("gmail_oauth_state_time", None)
+
+    # Determine target user id
+    target_user_id = state_user_id or session.get("user_id") or session_user_id
+
+    # Resolve destination frontend URL
+    frontend_url = get_frontend_url(state_frontend_url)
+
+    # Handle error returned by Google (e.g. user cancelled or denied consent)
     if google_error:
         error_desc = request.args.get("error_description") or google_error
-        # Purge any stored state tokens
-        session.pop("gmail_oauth_state", None)
-        session.pop("gmail_oauth_state_time", None)
-        session.pop("gmail_oauth_user_id", None)
         return redirect(
             f"{frontend_url}/?tab=gmail&status=error&message={urllib.parse.quote('Google authorization was cancelled or denied: ' + error_desc)}"
         )
 
-    # 2. Extract code and state
-    code = request.args.get("code")
-    received_state = request.args.get("state")
+    # Validate state: either cryptographically verified state token OR session state match
+    is_state_valid = bool(state_user_id) or (
+        received_state and session_state and received_state == session_state and
+        session_time and (time.time() - float(session_time)) <= 600
+    )
+
+    if not is_state_valid:
+        return redirect(
+            f"{frontend_url}/?tab=gmail&status=error&message={urllib.parse.quote('Invalid or missing OAuth security state token.')}"
+        )
 
     if not code:
         return redirect(
             f"{frontend_url}/?tab=gmail&status=error&message={urllib.parse.quote('Missing authorization code from Google.')}"
         )
 
-    # 3. Validate state to prevent CSRF and account-linking attacks
-    saved_state = session.pop("gmail_oauth_state", None)
-    saved_time = session.pop("gmail_oauth_state_time", None)
-    saved_user_id = session.pop("gmail_oauth_user_id", None)
-
-    if not received_state or not saved_state or received_state != saved_state:
-        return redirect(
-            f"{frontend_url}/?tab=gmail&status=error&message={urllib.parse.quote('Invalid or missing OAuth security state token.')}"
-        )
-
-    # Validate state expiry (10 minutes)
-    if saved_time and (time.time() - float(saved_time)) > 600:
-        return redirect(
-            f"{frontend_url}/?tab=gmail&status=error&message={urllib.parse.quote('OAuth session expired. Please initiate connection again.')}"
-        )
-
-    # Resolve target user id strictly from verified session
-    current_user_id = session.get("user_id")
-    target_user_id = current_user_id or saved_user_id
     if not target_user_id:
         return redirect(
             f"{frontend_url}/?tab=gmail&status=error&message={urllib.parse.quote('Authentication session not found. Please log in before connecting Gmail.')}"

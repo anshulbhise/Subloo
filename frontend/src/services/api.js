@@ -139,7 +139,10 @@ export const api = {
 
   // Gmail Integration
   getGmailStatus: () => apiRequest("/gmail/status"),
-  getGmailAuthUrl: () => apiRequest("/gmail/auth-url"),
+  getGmailAuthUrl: (origin) => {
+    const query = origin ? `?origin=${encodeURIComponent(origin)}` : "";
+    return apiRequest(`/gmail/auth-url${query}`);
+  },
   syncGmail: () =>
     apiRequest("/gmail/sync", {
       method: "POST",
