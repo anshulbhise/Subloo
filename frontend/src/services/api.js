@@ -54,6 +54,14 @@ export const api = {
 
   currentUser: () => apiRequest("/auth/me"),
 
+  getProfile: () => apiRequest("/auth/profile"),
+
+  updateProfile: (profileData) =>
+    apiRequest("/auth/profile", {
+      method: "PUT",
+      body: JSON.stringify(profileData),
+    }),
+
   logout: () =>
     apiRequest("/auth/logout", {
       method: "POST",

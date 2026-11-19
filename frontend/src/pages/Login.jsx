@@ -1,8 +1,10 @@
-
 import { useState } from "react";
 import useAuth from "../context/useAuth";
+import { useTheme } from "../context/ThemeContext";
+
 function Login() {
   const { login, register } = useAuth();
+  const { theme, setTheme, resolvedTheme } = useTheme();
 
   const [isRegister, setIsRegister] = useState(false);
   const [fullName, setFullName] = useState("");
@@ -15,172 +17,236 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
     setError("");
     setSuccess("");
     setLoading(true);
 
     try {
       if (isRegister) {
+        if (!fullName.trim()) {
+          throw new Error("Please enter your full name.");
+        }
+        if (password.length < 12) {
+          throw new Error("Password must be at least 12 characters long.");
+        }
         await register({
-          full_name: fullName,
-          email: email,
+          full_name: fullName.trim(),
+          email: email.trim().toLowerCase(),
           password: password,
         });
-
         setSuccess("Account created successfully!");
       } else {
         await login({
-          email: email,
+          email: email.trim().toLowerCase(),
           password: password,
         });
-
         setSuccess("Login successful!");
       }
     } catch (err) {
-      setError(err.message || "Something went wrong.");
+      setError(err.message || "Authentication failed. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
+  const cycleTheme = () => {
+    if (theme === "system") setTheme("dark");
+    else if (theme === "dark") setTheme("light");
+    else setTheme("system");
+  };
+
   return (
-    <div className="min-h-screen bg-[#F7F9F8] flex items-center justify-center px-4">
+    <div className="min-h-screen bg-[var(--bg-app)] flex flex-col justify-between p-4 sm:p-6 transition-colors duration-200">
+      {/* Top bar with quick theme toggle */}
+      <div className="flex items-center justify-between max-w-5xl mx-auto w-full">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent-primary)] text-sm font-bold text-white shadow-xs">
+            S
+          </div>
+          <span className="text-sm font-bold tracking-tight text-[var(--text-primary)]">
+            subloo
+          </span>
+        </div>
 
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
+        <button
+          onClick={cycleTheme}
+          title={`Current theme: ${theme} (${resolvedTheme}). Click to cycle.`}
+          className="flex items-center gap-2 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--bg-surface-hover)] transition shadow-2xs"
+        >
+          {resolvedTheme === "dark" ? (
+            <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          )}
+          <span className="capitalize">{theme}</span>
+        </button>
+      </div>
 
-        {/* Logo */}
+      {/* Centered Auth Card */}
+      <div className="w-full max-w-md mx-auto my-auto bg-[var(--bg-surface)] rounded-2xl shadow-xl border border-[var(--border-subtle)] p-6 sm:p-8">
+        {/* Brand header */}
         <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-[#087F65] text-white rounded-xl flex items-center justify-center text-2xl font-bold mx-auto mb-4">
+          <div className="w-12 h-12 bg-[var(--accent-primary)] text-white rounded-xl flex items-center justify-center text-xl font-bold mx-auto mb-3 shadow-xs">
             S
           </div>
 
-          <h1 className="text-3xl font-bold text-gray-900">
+          <h1 className="text-2xl font-extrabold text-[var(--text-primary)] tracking-tight">
             subloo
           </h1>
 
-          <p className="text-xs tracking-[0.25em] text-gray-500 mt-1">
+          <p className="text-[10px] tracking-[0.25em] font-medium text-[var(--text-muted)] mt-0.5">
             SMARTER SUBSCRIPTIONS
           </p>
         </div>
 
-        {/* Heading */}
+        {/* Form Title & Subtitle */}
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">
+          <h2 className="text-xl font-bold text-[var(--text-primary)]">
             {isRegister ? "Create your account" : "Welcome back"}
           </h2>
-
-          <p className="text-gray-500 text-sm mt-2">
+          <p className="text-xs text-[var(--text-muted)] mt-1">
             {isRegister
-              ? "Start managing your subscriptions smarter."
-              : "Sign in to continue to your workspace."}
+              ? "Start managing your subscriptions with intelligent waste detection."
+              : "Sign in to access your personal workspace."}
           </p>
         </div>
 
-        {/* Error */}
+        {/* Feedback Alerts */}
         {error && (
-          <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-4">
-            {error}
+          <div className="mb-4 rounded-xl border border-red-500/20 bg-red-500/10 p-3.5 text-xs font-medium text-red-500 flex items-center gap-2">
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <span>{error}</span>
           </div>
         )}
 
-        {/* Success */}
         {success && (
-          <div className="bg-green-50 text-green-700 p-3 rounded-lg text-sm mb-4">
-            {success}
+          <div className="mb-4 rounded-xl border border-[var(--accent-border)] bg-[var(--accent-subtle)] p-3.5 text-xs font-medium text-[var(--accent-text)] flex items-center gap-2">
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <span>{success}</span>
           </div>
         )}
 
-        {/* Form */}
+        {/* Authentication Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-
           {isRegister && (
             <div>
-              <label className="block text-sm font-medium mb-2 text-gray-700">
+              <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
                 Full Name
               </label>
-
               <input
                 type="text"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
-                placeholder="Enter your full name"
+                placeholder="e.g. Anshul Bhise"
                 required
                 maxLength={120}
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:border-[#087F65]"
+                className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
               />
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium mb-2 text-gray-700">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)] mb-1.5">
               Email Address
             </label>
-
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               required
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:border-[#087F65]"
+              className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-2 text-gray-700">
-              Password
-            </label>
-
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+                Password
+              </label>
+              {isRegister && (
+                <span className="text-[10px] text-[var(--text-muted)]">
+                  Min. 12 characters
+                </span>
+              )}
+            </div>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter your password"
+              placeholder="••••••••••••"
               minLength={12}
               required
-              className="w-full border border-gray-300 rounded-lg px-4 py-3 outline-none focus:border-[#087F65]"
+              className="w-full rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)] px-3.5 py-2.5 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:border-[var(--accent-primary)] focus:bg-[var(--bg-surface)] outline-none transition"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-[#087F65] hover:bg-[#066A55] disabled:opacity-60 text-white font-semibold py-3 rounded-lg transition-colors"
+            className="w-full mt-2 inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--accent-primary)] hover:bg-[var(--accent-hover)] text-white py-2.5 text-sm font-semibold transition shadow-xs disabled:opacity-60"
           >
-            {loading
-              ? "Please wait..."
-              : isRegister
-              ? "Create Account"
-              : "Sign In"}
+            {loading ? (
+              <>
+                <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                </svg>
+                <span>Processing...</span>
+              </>
+            ) : (
+              <span>{isRegister ? "Create Account" : "Sign In"}</span>
+            )}
           </button>
-
         </form>
 
-        {/* Switch Mode */}
-        <div className="text-center mt-6 text-sm text-gray-600">
-          {isRegister
-            ? "Already have an account?"
-            : "Don't have an account?"}
-
-          <button
-            type="button"
-            onClick={() => {
-              setIsRegister(!isRegister);
-              setError("");
-              setSuccess("");
-            }}
-            className="text-[#087F65] font-semibold ml-2 hover:underline"
-          >
-            {isRegister ? "Sign In" : "Register"}
-          </button>
+        {/* Switch mode */}
+        <div className="mt-6 text-center text-xs text-[var(--text-muted)] border-t border-[var(--border-subtle)] pt-5">
+          {isRegister ? (
+            <p>
+              Already have an account?{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRegister(false);
+                  setError("");
+                  setSuccess("");
+                }}
+                className="font-bold text-[var(--accent-text)] hover:underline"
+              >
+                Sign In
+              </button>
+            </p>
+          ) : (
+            <p>
+              Don't have an account yet?{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRegister(true);
+                  setError("");
+                  setSuccess("");
+                }}
+                className="font-bold text-[var(--accent-text)] hover:underline"
+              >
+                Create Account
+              </button>
+            </p>
+          )}
         </div>
+      </div>
 
-        {/* Privacy */}
-        <p className="text-center text-xs text-gray-400 mt-8">
-          Your financial information stays private and secure.
-        </p>
-
+      {/* Footer */}
+      <div className="text-center text-[11px] text-[var(--text-muted)] max-w-sm mx-auto">
+        <p>Your subscription and usage telemetry are encrypted and isolated to your account.</p>
       </div>
     </div>
   );
