@@ -1,5 +1,7 @@
 
 import os
+import re
+import urllib.parse
 from flask_migrate import Migrate
 from pathlib import Path
 
@@ -34,12 +36,24 @@ def create_app():
     # Support direct Supabase / PostgreSQL URI or fallback to discrete MySQL variables
     database_url = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
     if database_url:
-        # Supabase provides postgres:// or postgresql://
-        # SQLAlchemy requires postgresql+psycopg2://
-        if database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
-        elif database_url.startswith("postgresql://") and not database_url.startswith("postgresql+"):
-            database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        database_url = database_url.strip().strip("'\"")
+        # Sanitize passwords with unescaped @ or brackets like [password]
+        match = re.match(
+            r"^(postgres(?:ql)?(?:\+[a-z0-9_]+)?://)([^:]+):(.*)@([^@/]+)(/.*)?$",
+            database_url
+        )
+        if match:
+            scheme, user, raw_pass, host_port, rest = match.groups()
+            rest = rest or ""
+            if raw_pass.startswith("[") and raw_pass.endswith("]"):
+                raw_pass = raw_pass[1:-1]
+            encoded_pass = urllib.parse.quote(urllib.parse.unquote(raw_pass))
+            database_url = f"postgresql+psycopg2://{user}:{encoded_pass}@{host_port}{rest}"
+        else:
+            if database_url.startswith("postgres://"):
+                database_url = database_url.replace("postgres://", "postgresql+psycopg2://", 1)
+            elif database_url.startswith("postgresql://") and not database_url.startswith("postgresql+"):
+                database_url = database_url.replace("postgresql://", "postgresql+psycopg2://", 1)
         app.config["SQLALCHEMY_DATABASE_URI"] = database_url
     else:
         app.config["SQLALCHEMY_DATABASE_URI"] = URL.create(
