@@ -1,0 +1,19 @@
+# Environment secrets
+.env
+
+# Python virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Testing
+.pytest_cache/
+
+# Logs
+*.log
+
+# Local database files
+*.db
+instance/
