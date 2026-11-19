@@ -1,20 +1,114 @@
 @import "tailwindcss";
 
-/* Subloo global styles */
+/* --------------------------------------------------
+ * SUBLOO DESIGN SYSTEM TOKENS
+ * Woday-inspired clean Light Mode & Deep Navy Dark Mode
+ * Subloo Emerald Identity
+ * -------------------------------------------------- */
 
 :root {
-  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+  /* Canvas & Base Surfaces */
+  --bg-app: #F8F9FA;
+  --bg-surface: #FFFFFF;
+  --bg-surface-secondary: #F1F3F5;
+  --bg-surface-subtle: #F8FAFC;
+  --bg-surface-hover: #E9ECEF;
+  --border-subtle: #E9ECEF;
+  --border-strong: #CED4DA;
 
-  color: #172033;
-  background: #f8fafc;
+  /* Typography */
+  --text-primary: #111827;
+  --text-secondary: #4B5563;
+  --text-muted: #9CA3AF;
 
+  /* Subloo Emerald Accent */
+  --accent-primary: #087F65;
+  --accent-hover: #066A55;
+  --accent-subtle: #E8F5F0;
+  --accent-border: #A7F3D0;
+  --accent-text: #065F46;
+
+  /* Status Colors */
+  --success: #059669;
+  --success-subtle: #ECFDF5;
+  --warning: #D97706;
+  --warning-subtle: #FFFBEB;
+  --danger: #DC2626;
+  --danger-subtle: #FEF2F2;
+  --info: #2563EB;
+  --info-subtle: #EFF6FF;
+
+  /* Global typography and baseline defaults */
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text-primary);
+  background-color: var(--bg-app);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
+.dark {
+  /* Canvas & Elevated Navy Surfaces */
+  --bg-app: #0B0F17;
+  --bg-surface: #111827;
+  --bg-surface-secondary: #162032;
+  --bg-surface-subtle: #131B2A;
+  --bg-surface-hover: #1E293B;
+  --border-subtle: #1E293B;
+  --border-strong: #334155;
+
+  /* Typography */
+  --text-primary: #F9FAFB;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+
+  /* High-Contrast Emerald Accent for Navy Canvas */
+  --accent-primary: #10B981;
+  --accent-hover: #059669;
+  --accent-subtle: rgba(16, 185, 129, 0.12);
+  --accent-border: rgba(16, 185, 129, 0.28);
+  --accent-text: #34D399;
+
+  /* Status Colors */
+  --success: #10B981;
+  --success-subtle: rgba(16, 185, 129, 0.12);
+  --warning: #F59E0B;
+  --warning-subtle: rgba(245, 158, 11, 0.12);
+  --danger: #EF4444;
+  --danger-subtle: rgba(239, 68, 68, 0.12);
+  --info: #3B82F6;
+  --info-subtle: rgba(59, 130, 246, 0.12);
+}
+
+/* Expose tokens to Tailwind v4 @theme */
+@theme {
+  --color-bg-app: var(--bg-app);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-surface-secondary: var(--bg-surface-secondary);
+  --color-bg-surface-subtle: var(--bg-surface-subtle);
+  --color-bg-surface-hover: var(--bg-surface-hover);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent-primary: var(--accent-primary);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-border: var(--accent-border);
+  --color-accent-text: var(--accent-text);
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-danger: var(--danger);
+  --color-danger-subtle: var(--danger-subtle);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+}
+
+/* Global Reset & Box Sizing */
 * {
   box-sizing: border-box;
 }
@@ -23,6 +117,9 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 button,
