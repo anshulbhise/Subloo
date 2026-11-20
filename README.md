@@ -3,6 +3,7 @@
 AI-powered subscription waste intelligence: detect recurring expenses from inbox receipts, track real usage, and cut unused spend.
 
 Stack I used to deploy:-
+
 Backend Unit Tests ( 20 / 20 Passed )
 Full coverage of Auth, Subscriptions, Financial Reports, Gmail OAuth, Token Encryption, and RBAC.
 
