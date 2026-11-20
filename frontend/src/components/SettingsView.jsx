@@ -260,6 +260,21 @@ function SettingsView({ user, onProfileUpdated }) {
     }
   };
 
+  // Clear all pending suggestions
+  const handleClearSuggestions = async () => {
+    if (!window.confirm("Clear all pending suggestions?")) return;
+    try {
+      setGmailLoading(true);
+      await api.clearGmailSuggestions();
+      setGmailSuggestions([]);
+      setGmailMessage("Cleared all pending suggestions.");
+    } catch (err) {
+      setGmailMessage(err.message || "Failed to clear suggestions.");
+    } finally {
+      setGmailLoading(false);
+    }
+  };
+
   // Create organization
   const handleCreateOrg = async (e) => {
     e.preventDefault();
@@ -641,6 +656,16 @@ function SettingsView({ user, onProfileUpdated }) {
               <h3 className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
                 Detected Subscription Suggestions ({gmailSuggestions.length})
               </h3>
+              {gmailSuggestions.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearSuggestions}
+                  disabled={gmailLoading}
+                  className="text-xs font-semibold text-red-500 hover:text-red-600 transition cursor-pointer"
+                >
+                  Clear Suggestions
+                </button>
+              )}
             </div>
 
             {gmailSuggestions.length === 0 ? (

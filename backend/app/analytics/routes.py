@@ -118,6 +118,23 @@ def get_analytics_summary():
             "percentage": pct,
         })
 
+    # Calculate average usage score across active subscriptions
+    all_usage_scores = []
+    for sub in subscriptions:
+        if sub.status in {"active", "trial"}:
+            c_list = (
+                SubscriptionUsageCheckIn.query.filter_by(
+                    subscription_id=sub.id,
+                    user_id=user_id
+                )
+                .order_by(SubscriptionUsageCheckIn.recorded_at.desc())
+                .first()
+            )
+            if c_list and c_list.usage_score is not None:
+                all_usage_scores.append(c_list.usage_score)
+
+    avg_usage_score = round(sum(all_usage_scores) / len(all_usage_scores), 1) if all_usage_scores else 70.0
+
     return jsonify({
         "status": "success",
         "currency": preferred_currency,
@@ -129,6 +146,7 @@ def get_analytics_summary():
         "monthly_recurring_expenditure": float(monthly_recurring_spend.quantize(Decimal("0.01"))),
         "yearly_estimated_expenditure": float(yearly_estimated_spend),
         "at_risk_count": at_risk_count,
+        "average_usage_score": avg_usage_score,
         "upcoming_renewals_count": len([r for r in upcoming_renewals if 0 <= r["days_until"] <= 30]),
         "upcoming_renewals": upcoming_renewals[:10],
         "category_breakdown": category_breakdown,

@@ -411,6 +411,12 @@ def create_subscription():
     except Exception:
         pass
 
+    try:
+        from app.intelligence.service import assess_subscription
+        assess_subscription(subscription, user_id)
+    except Exception as assess_err:
+        current_app.logger.warning(f"Could not assess new subscription: {assess_err}")
+
     return jsonify({
         "status": "success",
         "message": "Subscription created successfully.",
@@ -570,6 +576,13 @@ def update_subscription(sub_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Failed to update subscription: {str(e)}"}), 500
+
+    # Automatically recompute AI waste intelligence assessment
+    try:
+        from app.intelligence.service import assess_subscription
+        assess_subscription(subscription, user_id)
+    except Exception as assess_err:
+        current_app.logger.warning(f"Could not re-assess subscription after update: {assess_err}")
 
     return jsonify({
         "status": "success",

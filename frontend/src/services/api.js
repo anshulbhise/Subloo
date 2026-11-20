@@ -162,6 +162,10 @@ export const api = {
     apiRequest(`/gmail/suggestions/${id}/reject`, {
       method: "POST",
     }),
+  clearGmailSuggestions: () =>
+    apiRequest("/gmail/suggestions/clear", {
+      method: "POST",
+    }),
 
   // Organizations & Teams RBAC
   getOrganizations: () => apiRequest("/organizations"),

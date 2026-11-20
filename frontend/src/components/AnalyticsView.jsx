@@ -56,6 +56,9 @@ const stats = useMemo(() => {
       intervalBreakdown: {},
       activeCount: 0,
       totalMonthly: 0,
+      avgUsage: 70,
+      atRiskSubs: [],
+      activeSubsList: [],
     };
   }
 
@@ -91,6 +94,19 @@ const stats = useMemo(() => {
     intervalMap[key].total += Number(s.monthly_cost ?? s.amount ?? 0);
   });
 
+  // Usage score metrics
+  const usageScores = activeSubs
+    .map((s) => s.usage_score)
+    .filter((u) => u !== null && u !== undefined);
+
+  const avgUsage = usageScores.length > 0
+    ? Math.round(usageScores.reduce((a, b) => a + b, 0) / usageScores.length)
+    : 70;
+
+  const atRiskSubs = activeSubs.filter(
+    (s) => s.usage_score !== null && s.usage_score !== undefined && s.usage_score < 40
+  );
+
   return {
     avgCost,
     highestSub,
@@ -98,6 +114,9 @@ const stats = useMemo(() => {
     intervalBreakdown: intervalMap,
     activeCount: activeSubs.length,
     totalMonthly,
+    avgUsage,
+    atRiskSubs,
+    activeSubsList: activeSubs,
   };
 }, [subscriptions]);
 
@@ -199,7 +218,7 @@ return (
     ) : (
       <>
         {/* Key Metric Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-xs">
             <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
               Monthly Recurring Burn
@@ -245,6 +264,20 @@ return (
             </p>
             <p className="text-xs text-[var(--text-muted)] mt-1">
               {stats.highestSub ? `${formatCurrency(stats.highestCost, currencySymbol)} / mo` : "No data"}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-xs">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+              Usage Efficiency
+            </p>
+            <p className="mt-2 text-2xl font-bold text-[var(--text-primary)]">
+              {stats.avgUsage}%
+            </p>
+            <p className={`text-xs mt-1 font-semibold ${
+              stats.atRiskSubs.length > 0 ? "text-red-500" : "text-emerald-500"
+            }`}>
+              {stats.atRiskSubs.length > 0 ? `${stats.atRiskSubs.length} at risk of waste` : "Healthy utilization"}
             </p>
           </div>
         </div>
@@ -348,6 +381,79 @@ return (
                 ))
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Usage & Value Efficiency Section */}
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-5">
+            <div>
+              <h3 className="text-base font-bold text-[var(--text-primary)]">
+                Usage & Value Efficiency
+              </h3>
+              <p className="text-xs text-[var(--text-muted)]">
+                Active subscriptions ranked by real user engagement and waste risk
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                stats.avgUsage >= 70
+                  ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
+                  : stats.avgUsage >= 40
+                  ? "bg-amber-500/10 text-amber-600 border border-amber-500/20"
+                  : "bg-red-500/10 text-red-600 border border-red-500/20"
+              }`}>
+                Avg Usage: {stats.avgUsage}%
+              </span>
+              {stats.atRiskSubs.length > 0 && (
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-500/10 text-red-600 border border-red-500/20">
+                  {stats.atRiskSubs.length} At Risk
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {stats.activeSubsList.map((sub) => {
+              const u = sub.usage_score !== null && sub.usage_score !== undefined ? sub.usage_score : 70;
+              const isAtRisk = u < 40;
+              return (
+                <div
+                  key={sub.id}
+                  className={`p-3.5 rounded-xl border transition ${
+                    isAtRisk
+                      ? "border-red-500/30 bg-red-500/5"
+                      : "border-[var(--border-subtle)] bg-[var(--bg-surface-secondary)]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-bold text-[var(--text-primary)] truncate">
+                      {sub.name || sub.custom_name}
+                    </span>
+                    <span className="text-xs font-bold text-[var(--text-primary)]">
+                      {formatCurrency(sub.monthly_cost ?? sub.amount, currencySymbol)}/mo
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-[10px] text-[var(--text-muted)]">
+                      <span>Usage Score</span>
+                      <span className={`font-semibold ${isAtRisk ? "text-red-500" : "text-[var(--text-primary)]"}`}>
+                        {sub.usage_score !== null && sub.usage_score !== undefined ? `${sub.usage_score}%` : "Not set"}
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-[var(--bg-surface)] overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          u >= 70 ? "bg-[var(--accent-primary)]" : u >= 40 ? "bg-amber-500" : "bg-red-500"
+                        }`}
+                        style={{ width: `${u}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </>

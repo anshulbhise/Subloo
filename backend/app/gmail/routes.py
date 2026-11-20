@@ -522,8 +522,23 @@ def sync_emails():
         except Exception as scan_err:
             current_app.logger.warning(f"Live Gmail scan encountered error: {scan_err}")
 
-    # 2. If no new live messages discovered (or testing mode), supplement with pattern discovery
-    if discovered == 0:
+        conn.last_synced_at = utc_now()
+        db.session.commit()
+
+        if discovered == 0:
+            msg = "Gmail scan complete: 0 new subscription receipts or billing emails found in your connected inbox."
+        else:
+            msg = f"Gmail scan complete: Discovered {discovered} new subscription receipt(s) from your inbox."
+
+        return jsonify({
+            "status": "success",
+            "message": msg,
+            "discovered_count": discovered
+        }), 200
+
+    # 2. If Gmail is NOT connected, only populate sample patterns if explicitly requested in demo mode
+    is_demo = request.args.get("demo") == "true"
+    if is_demo or not conn:
         existing_subs = Subscription.query.filter_by(owner_user_id=user_id).all()
         existing_names = {
             (s.custom_name or (s.provider.name if s.provider else "")).strip().lower()
@@ -536,7 +551,6 @@ def sync_emails():
             if provider_name.lower() in existing_names:
                 continue
 
-            # Check if already suggested in pending state
             already_suggested = GmailDetectedSubscription.query.filter_by(
                 user_id=user_id,
                 detected_provider=provider_name
@@ -567,7 +581,7 @@ def sync_emails():
 
     return jsonify({
         "status": "success",
-        "message": f"Sync completed. Discovered {discovered} new subscription suggestions.",
+        "message": f"Sync completed. Discovered {discovered} sample subscription suggestion(s).",
         "discovered_count": discovered
     }), 200
 
@@ -653,6 +667,13 @@ def approve_suggestion(suggestion_id):
     suggestion.status = "approved"
     db.session.commit()
 
+    # Re-assess newly created subscription for immediate AI waste intelligence
+    try:
+        from app.intelligence.service import assess_subscription
+        assess_subscription(new_sub, user_id)
+    except Exception as e:
+        current_app.logger.warning(f"Could not assess newly approved subscription: {e}")
+
     return jsonify({
         "status": "success",
         "message": f"Approved and imported '{suggestion.detected_provider}' as an active subscription.",
@@ -682,4 +703,25 @@ def reject_suggestion(suggestion_id):
     return jsonify({
         "status": "success",
         "message": "Suggestion rejected."
+    }), 200
+
+
+# --------------------------------------------------
+# 9. CLEAR ALL PENDING SUGGESTIONS
+# --------------------------------------------------
+@gmail_bp.route("/suggestions/clear", methods=["POST", "DELETE"])
+@login_required
+def clear_all_suggestions():
+    """Wipe all pending suggestions so user has a clean slate."""
+    user_id = get_current_user_id()
+    cleared = GmailDetectedSubscription.query.filter_by(
+        user_id=user_id,
+        status="pending"
+    ).delete()
+    db.session.commit()
+
+    return jsonify({
+        "status": "success",
+        "message": f"Cleared {cleared} pending suggestion(s).",
+        "cleared_count": cleared
     }), 200
